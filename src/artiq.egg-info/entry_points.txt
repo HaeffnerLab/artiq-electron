@@ -1,0 +1,19 @@
+[console_scripts]
+aqctl_corelog = artiq.frontend.aqctl_corelog:main
+artiq_client = artiq.frontend.artiq_client:main
+artiq_compile = artiq.frontend.artiq_compile:main
+artiq_coreanalyzer = artiq.frontend.artiq_coreanalyzer:main
+artiq_coremgmt = artiq.frontend.artiq_coremgmt:main
+artiq_ddb_template = artiq.frontend.artiq_ddb_template:main
+artiq_flash = artiq.frontend.artiq_flash:main
+artiq_master = artiq.frontend.artiq_master:main
+artiq_mkfs = artiq.frontend.artiq_mkfs:main
+artiq_route = artiq.frontend.artiq_route:main
+artiq_rtiomon = artiq.frontend.artiq_rtiomon:main
+artiq_run = artiq.frontend.artiq_run:main
+artiq_session = artiq.frontend.artiq_session:main
+artiq_sinara_tester = artiq.frontend.artiq_sinara_tester:main
+
+[gui_scripts]
+artiq_browser = artiq.frontend.artiq_browser:main
+artiq_dashboard = artiq.frontend.artiq_dashboard:main

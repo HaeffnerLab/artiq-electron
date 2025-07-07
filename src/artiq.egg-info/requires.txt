@@ -1,0 +1,10 @@
+numpy
+scipy
+python-dateutil
+prettytable
+h5py
+qasync
+pyqtgraph
+pygit2
+pythonparser
+python-Levenshtein
