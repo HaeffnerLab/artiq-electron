@@ -14,7 +14,7 @@ import sys
     
 
 
-def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5): 
+def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5, print_log=False): 
     rm = visa.ResourceManager()
     instruments = rm.list_resources()
     # instruments
@@ -38,7 +38,9 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5):
     odp.write("CURR:PROT 0.001")
     odp.write("OUTP ON")
 
-    Vstep0 = 5*50/5000
+    Vstep01 = 5*50/5000
+    Vstep02 = 5*50/2500 * 1.8
+    Vstep03 = 5*50/2500
     V1g0 = 10*V1/5000
     V2g0 = 10*V2/2500
     V3g0 = 10*V3/1250
@@ -69,177 +71,196 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5):
                 if vcurr2 > V2g0+0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         sleep(sleeptime)
                 elif vcurr2 < V2g0-0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        odp.write("VOLT "+str(vcurr2+Vstep02))
                         sleep(sleeptime)
                 else:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         sleep(sleeptime)
             elif vcurr1 < V1g0-0.1:
                 if vcurr2 > V2g0+0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         sleep(sleeptime)
                 elif vcurr2 < V2g0-0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         sleep(sleeptime)
                 else:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1+Vstep0))
+                        odp.write("VOLT "+str(vcurr1+Vstep01))
                         sleep(sleeptime)       
             else:
                 if vcurr2 > V2g0+0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        odp.write("VOLT "+str(vcurr2-Vstep02))
                         sleep(sleeptime)
                 elif vcurr2 < V2g0-0.1:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2+Vstep0))
+                        if vcurr2*2500/10 < (vcurr1*5000/10-50):
+                            odp.write("VOLT "+str(vcurr2+Vstep02))
                         sleep(sleeptime)
                 else:
                     if vcurr3 > V3g0+0.1:
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     elif vcurr3 < V3g0-0.1:
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3+Vstep0))
+                        if vcurr3*1250 < vcurr2*2500:
+                            odp.write("VOLT "+str(vcurr3+Vstep03))
                         sleep(sleeptime)
                     else:
                         break
-            print(vcurr1, vcurr2, vcurr3)
+            if print_log: 
+                print(vcurr1, vcurr2, vcurr3)
         odp.write("INST:NSEL 1")
         odp.write("VOLT "+str(V1g0))
         odp.write("INST:NSEL 2")
@@ -247,9 +268,11 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5):
         odp.write("INST:NSEL 3")
         odp.write("VOLT "+str(V3g0))
         print("Finish")
-        print(vcurr1, vcurr2, vcurr3)
+        if print_log: 
+            print(vcurr1, vcurr2, vcurr3)
 
     elif TODO == OFF:
+        sleeptime = 0.5
         odp.write("INST:NSEL 1")
         vinit1 = float(odp.query("MEAS:VOLT?"))
         sleep(0.1)
@@ -271,51 +294,59 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5):
                 if vcurr2 > 0.11:
                     if vcurr3 > 0.11:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        if vcurr2*2500/10 > (vcurr1*5000/10-200):
+                            odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        if vcurr3*1250/10 > (vcurr2*2500/10-200):
+                            odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        if vcurr2*2500/10 > (vcurr1*5000/10-200):
+                            odp.write("VOLT "+str(vcurr2-Vstep02))
                         sleep(sleeptime)                    
                 else:
                     if vcurr3 > 0.11:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        if vcurr3*1250/10 > (vcurr2*2500/10-200):
+                            odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 1")
-                        odp.write("VOLT "+str(vcurr1-Vstep0))
+                        odp.write("VOLT "+str(vcurr1-Vstep01))
                         sleep(sleeptime)                    
                     
             else:
                 if vcurr2 > 0.11:
                     if vcurr3 > 0.11:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        if vcurr2*2500/10 > (vcurr1*5000/10-200):
+                            odp.write("VOLT "+str(vcurr2-Vstep02))
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        if vcurr3*1250/10 > (vcurr2*2500/10-200):
+                            odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     else:
                         odp.write("INST:NSEL 2")
-                        odp.write("VOLT "+str(vcurr2-Vstep0))
+                        if vcurr2*2500/10 > (vcurr1*5000/10-200):
+                            odp.write("VOLT "+str(vcurr2-Vstep02))
                         sleep(sleeptime)                    
                 else:
                     if vcurr3 > 0.11:
                         odp.write("INST:NSEL 3")
-                        odp.write("VOLT "+str(vcurr3-Vstep0))
+                        if vcurr3*1250/10 > (vcurr2*2500/10-200):
+                            odp.write("VOLT "+str(vcurr3-Vstep03))
                         sleep(sleeptime)
                     else:
                         break
-                    
-            print(vcurr1, vcurr2, vcurr3)
+            if print_log:        
+                print(vcurr1, vcurr2, vcurr3)
         odp.write("INST:NSEL 1")
         odp.write("VOLT 0.01")
         odp.write("INST:NSEL 2")

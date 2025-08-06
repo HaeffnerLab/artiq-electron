@@ -19,7 +19,7 @@ class TriggeredPulse(EnvExperiment):
         self.d0 = self.get_device(f"urukul0_ch{self.DDS_channel}")
         self.t = self.get_device(f"ttl{self.TTL_channel}")
         self.run_outputting()
-        time.sleep((self.duration+self.delay_time)/1000*self.repetition)
+        time.sleep((self.duration+self.delay_time)/1050*self.repetition)
 
     @kernel
     def run_outputting(self):
