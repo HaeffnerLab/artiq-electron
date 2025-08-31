@@ -8,7 +8,7 @@ class DAC_config(HasEnvironment):
         self.setattr_device('core')
         self.setattr_device('zotino0')
         self.setattr_argument("c_file_csv", StringValue(default=f'{artiq.__artiq_dir__}/../../experiment/control_files/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv'))
-        self.setattr_argument("offset_file_txt", StringValue(default=f'{artiq.__artiq_dir__}/../../experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp.txt'))
+        self.setattr_argument("offset_file_txt", StringValue(default=f'{artiq.__artiq_dir__}/../../experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp_1Mcorrection2.txt'))
         # pin matching: electrode name, zotino channel number
         self.pin_matching = {
             "bl1":19,

@@ -39,14 +39,15 @@ class Electron(HasEnvironment):
         #self.setattr_device("ttl_TimeTagger") # time tagger start click
         self.setattr_device_nickname("ttl9", 'ttl_Tickle')
         self.setattr_device_nickname("ttl10", 'ttl_Extraction')
-        self.setattr_device_nickname("ttl3", 'ttl_TimeTagger')
+        self.setattr_device_nickname("ttl11", 'ttl_TimeTagger')
+        # self.setattr_device_nickname("ttl16", 'ttl_390')
 
 
         self.setattr_device("ttl12")
         self.setattr_device("ttl13")
         self.setattr_device("ttl20")
         #self.setattr_device("ttl_390") # use this channel to trigger AOM, connect to switch near VCO and AOM
-        self.setattr_device_nickname("ttl8", "ttl_390")
+        self.setattr_device_nickname("ttl16", "ttl_390")
         # self.setattr_device('scheduler') # scheduler used
         self.setattr_device("sampler0")
 
@@ -154,8 +155,8 @@ class Electron(HasEnvironment):
 
         self.old_c_file = False
         # FIXME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! CHANGE THIS STRUCTURE!!!!!!!!!!!!!!!!!!!!!
-        self.c_file_csv = '/home/electron/artiq/experiment/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv'
-        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp.txt'
+        self.c_file_csv = '/home/electron/artiq/experiment/control_files/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv'
+        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp_1Mcorrection2.txt'
     
         self.controlled_multipoles_dict = {"Ex":'Ex:', "Ey":'Ey:', "Ez":'Ez:', "U1":'U1:', "U2":'U2:', "U3":'U3:', "U4":'U4:', "U5":'U5:'}
         self.controlled_parameters_dict = {"t_load":'Load time (us):', "t_wait":'Wait time (us):', "t_delay":'Delay time (ns):',"t_acquisition":'Acquisition time(ns):' , "pulse_counting_time":'Pulse counting time (ms):',"trigger_level":'Trigger level (V):',"number_of_repetitions":'# Repetitions:', "number_of_datapoints":'# Datapoints:', "bins":'# Bins:',"update_cycle":'# Update cycles:',"V_grid": "V gird (V)"}

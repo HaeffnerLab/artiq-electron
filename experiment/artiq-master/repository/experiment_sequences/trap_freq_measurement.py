@@ -36,8 +36,9 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
         self.setattr_argument('step_size',NumberValue(default=1,unit='MHz',scale=1,ndecimals=1,step=0.1)) # tickle freq step size
         self.setattr_argument('t_load',NumberValue(default=100,unit='us',scale=1,ndecimals=0,step=1)) # load time
         self.setattr_argument('t_wait',NumberValue(default=100,unit='us',scale=1,ndecimals=0,step=1)) # wait time
-
+        self.setattr_argument('t_initial_delay',NumberValue(default=30,unit='s',scale=1,ndecimals=0,step=1)) # delay time at the beginning of the experiment
         self.dds_tickle = self.get_device("urukul0_ch0")
+        self.setattr_argument("continuous_loading", BooleanValue(default=False))
         self.setattr_device("ttl12")
 
     def prepare(self):
@@ -77,7 +78,8 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
                     self.ttl_390.on()
                     delay(t_load*us)
                     with parallel:
-                        self.ttl_390.off()
+                        if not self.continuous_loading:
+                            self.ttl_390.off()
                         self.ttl_Tickle.on()
                     delay(t_wait*us)
                     with parallel:
@@ -104,7 +106,7 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
         self.dds_tickle.cpld.init()
         self.dds_tickle.init()
         self.dds_tickle.set_att(self.att*dB)
-        
+        delay(self.t_initial_delay*s) # wait for a while before starting the experiment
         for i in range(self.number_of_datapoints):
             self.core.break_realtime()
             # freq_tickle = self.step_size*i+self.freq_start
@@ -112,14 +114,18 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
             t = now_mu()
             self.dds_tickle.set(freq_tickle*MHz, phase=0., ref_time_mu=t)
             self.dds_tickle.sw.on()
+            if self.continuous_loading:
+                self.ttl_390.on()
             count_tot = 0
             for j in range(self.n_repetitions):
                 self.core.break_realtime()
                 with sequential:
-                    self.ttl_390.on()
+                    if not self.continuous_loading:
+                        self.ttl_390.on()
                     delay(self.t_load*us)
                     with parallel:
-                        self.ttl_390.off()
+                        if not self.continuous_loading:
+                            self.ttl_390.off()
                         self.ttl_Tickle.on()
                     delay(self.t_wait*us)
                     with parallel:

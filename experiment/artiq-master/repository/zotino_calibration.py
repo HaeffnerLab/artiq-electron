@@ -70,8 +70,8 @@ class zotino_calibrator(EnvExperiment):
                     # delay(100*us)
                     self.ttl18.pulse(2000*us)
                     delay(10*us)
-            delay(4*s)
-            time.sleep(4)
+            delay(2*s)
+            time.sleep(2)
         print("done scanning")
             # self.zotino0.write_offset_dacs_mu()
 
