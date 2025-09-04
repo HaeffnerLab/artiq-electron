@@ -48,6 +48,7 @@ class Electron(HasEnvironment):
         self.setattr_device("ttl20")
         #self.setattr_device("ttl_390") # use this channel to trigger AOM, connect to switch near VCO and AOM
         self.setattr_device_nickname("ttl16", "ttl_390")
+        self.setattr_device_nickname("ttl23", "ttl_load")
         # self.setattr_device('scheduler') # scheduler used
         self.setattr_device("sampler0")
 
@@ -409,9 +410,10 @@ class Electron(HasEnvironment):
                     #     self.ttl8.off()
                     #     self.ttl12.off()
                     self.ttl_390.on()
+                    self.ttl_load.off()
                     delay(t_load*us)
                     with parallel:
-                        self.ttl_390.off()
+                        # self.ttl_load.off()
                         # delay(1500*ns) # get rid of the photo diode fall time
                         self.ttl_Tickle.on()  
                     delay(t_wait*us)
@@ -445,9 +447,11 @@ class Electron(HasEnvironment):
                 self.core.break_realtime()
                 with sequential:
                     self.ttl_390.on()
+                    self.ttl_load.off()
                     delay(t_load*us)
                     with parallel:
                         self.ttl_390.off()
+                        self.ttl_load.on()
                         self.ttl_Tickle.on()
                     delay(t_wait*us)
                     with parallel:
@@ -494,9 +498,11 @@ class Electron(HasEnvironment):
                     self.core.break_realtime()
                     with sequential:
                         self.ttl_390.on()
+                        self.ttl_load.on()
                         delay(t_load*us)
                         with parallel:
                             self.ttl_390.off()
+                            self.ttl_load.off()
                             self.ttl_Tickle.on()
                         delay(wait_times[n]*us)
                         with parallel:
@@ -609,6 +615,7 @@ class Electron(HasEnvironment):
 
         if self.index == 0:
             self.ttl_390.on() # AOM
+            self.ttl_load.on()
         # self.core.break_realtime()
         for k in range(self.update_cycle):
             self.core.break_realtime()
@@ -646,9 +653,11 @@ class Electron(HasEnvironment):
                 self.core.break_realtime()
                 with sequential:
                     self.ttl_390.on()
+                    self.ttl_load.on()
                     delay(t_load*us)
                     with parallel:
                         self.ttl_390.off()
+                        self.ttl_load.off()
                         self.ttl_Tickle.on()
                     delay(t_wait*us)
                     with parallel:
