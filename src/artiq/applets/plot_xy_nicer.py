@@ -34,6 +34,7 @@ class XYPlot(pyqtgraph.PlotWidget):
         # Add a legend for fit curves.
         self.legend = self.addLegend()
         self.fit_curves = {}
+        self.auto_zoom_in = False  # Auto zoom-in flag toggled by 'F' key.
 
     def update_color_scheme(self):
         """Set the color scheme based on self.dark_mode."""
@@ -62,22 +63,44 @@ class XYPlot(pyqtgraph.PlotWidget):
             self.getAxis('bottom').setTextPen(pyqtgraph.mkPen("k"))
             self.getAxis('left').setTextPen(pyqtgraph.mkPen("k"))
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_F:
-            if (self.latest_x is not None and self.latest_y is not None and len(self.latest_x) > 0):
+    def zoom_in_data(self):
+        if (self.latest_x is not None and self.latest_y is not None and len(self.latest_x) > 0):
                 # Zoom to only data points with positive y.
-                if len(np.where(self.latest_y > 0)[0]) > 0:
-                    x_min = np.min(self.latest_x[np.where(self.latest_y > 0)])
-                    x_max = np.max(self.latest_x[np.where(self.latest_y > 0)])
-                    y_min = np.min(self.latest_y[np.where(self.latest_y > 0)])
-                    y_max = np.max(self.latest_y[np.where(self.latest_y > 0)])
+                if len(np.where(self.latest_y >= 0)[0]) > 0:
+                    if self.args.window is not None:
+                        right_index = np.where(self.latest_y >= 0)[0][-1]
+                        indices = np.arange(max(0, right_index - self.args.window),
+                                            right_index)
+                        x_min = np.min(self.latest_x[indices])
+                        x_max = np.max(self.latest_x[indices])
+                        y_min = np.min(self.latest_y[indices])
+                        y_max = np.max(self.latest_y[indices])
+                    else:
+                        x_min = np.min(self.latest_x[np.where(self.latest_y >= 0)])
+                        x_max = np.max(self.latest_x[np.where(self.latest_y >= 0)])
+                        y_min = np.min(self.latest_y[np.where(self.latest_y >= 0)])
+                        y_max = np.max(self.latest_y[np.where(self.latest_y >= 0)])
                 else: 
                     x_min = np.min(self.latest_x)
                     x_max = np.max(self.latest_x)
                     y_min = np.min(self.latest_y)
                     y_max = np.max(self.latest_y)
+
+                # --- Fix: avoid zero-height y-range ---
+                if y_min == y_max:
+                    delta = 1e-9 if y_min == 0 else abs(y_min) * 0.05  # 5% padding or tiny value
+                    y_min -= delta
+                    y_max += delta
                 self.getViewBox().setRange(xRange=(x_min, x_max),
                                            yRange=(y_min, y_max), padding=0.1)
+        
+        return
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_F:
+            if not self.auto_zoom_in:
+                self.zoom_in_data()
+            self.auto_zoom_in = not self.auto_zoom_in
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -254,7 +277,8 @@ class XYPlot(pyqtgraph.PlotWidget):
         self.clear()
         self.plot(x, y, pen=None, symbol='o', symbolSize=10,
                   symbolBrush=self.color_scheme["data"])
-
+        if self.auto_zoom_in:
+            self.zoom_in_data()
         if self.interpolate:
             interp_pen = pyqtgraph.mkPen(self.color_scheme["interp"],
                                          style=QtCore.Qt.DashLine, width=3)
@@ -393,6 +417,7 @@ def main():
     applet.add_dataset('rid', 'RID values', required=False)
     applet.add_dataset('error', 'Error bars for each X value', required=False)
     applet.add_dataset('fit', 'Fit values for each X value', required=False)
+    applet.argparser.add_argument('--window', type=int, default=None)
     try:
         applet.argparser.add_argument('--range', type=int, default=None)
         applet.argparser.add_argument('--xlabel', type=str, default='X')

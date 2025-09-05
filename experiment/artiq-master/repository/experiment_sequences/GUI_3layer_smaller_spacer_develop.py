@@ -40,7 +40,7 @@ class Electron(HasEnvironment):
         self.setattr_device_nickname("ttl9", 'ttl_Tickle')
         self.setattr_device_nickname("ttl10", 'ttl_Extraction')
         self.setattr_device_nickname("ttl11", 'ttl_TimeTagger')
-        # self.setattr_device_nickname("ttl16", 'ttl_390')
+        self.setattr_device_nickname("ttl23", 'ttl_load')
 
 
         self.setattr_device("ttl12")
@@ -409,9 +409,11 @@ class Electron(HasEnvironment):
                     #     self.ttl8.off()
                     #     self.ttl12.off()
                     self.ttl_390.on()
+                    self.ttl_load.on()
                     delay(t_load*us)
                     with parallel:
                         self.ttl_390.off()
+                        self.ttl_load.off()
                         # delay(1500*ns) # get rid of the photo diode fall time
                         self.ttl_Tickle.on()  
                     delay(t_wait*us)
@@ -445,9 +447,11 @@ class Electron(HasEnvironment):
                 self.core.break_realtime()
                 with sequential:
                     self.ttl_390.on()
+                    self.ttl_load.on()
                     delay(t_load*us)
                     with parallel:
                         self.ttl_390.off()
+                        self.ttl_load.off()
                         self.ttl_Tickle.on()
                     delay(t_wait*us)
                     with parallel:
@@ -494,9 +498,11 @@ class Electron(HasEnvironment):
                     self.core.break_realtime()
                     with sequential:
                         self.ttl_390.on()
+                        self.ttl_load.on()
                         delay(t_load*us)
                         with parallel:
                             self.ttl_390.off()
+                            self.ttl_load.off()
                             self.ttl_Tickle.on()
                         delay(wait_times[n]*us)
                         with parallel:
@@ -609,6 +615,7 @@ class Electron(HasEnvironment):
 
         if self.index == 0:
             self.ttl_390.on() # AOM
+            self.ttl_load.on()
         # self.core.break_realtime()
         for k in range(self.update_cycle):
             self.core.break_realtime()
@@ -646,9 +653,11 @@ class Electron(HasEnvironment):
                 self.core.break_realtime()
                 with sequential:
                     self.ttl_390.on()
+                    self.ttl_load.on()
                     delay(t_load*us)
                     with parallel:
                         self.ttl_390.off()
+                        self.ttl_load.off()
                         self.ttl_Tickle.on()
                     delay(t_wait*us)
                     with parallel:
@@ -947,7 +956,7 @@ class MyTabWidget(HasEnvironment,QWidget):
                 spin.setSingleStep(0.01)
                 spin.setDecimals(4)
             else:
-                spin.setRange(-10000000,10000000)
+                spin.setRange(-10000000,100000000)
                 spin.setSingleStep(10)
             spin.setValue(self.default_parameter[p]) # set default values
             self.parameter_spin[p] = spin
@@ -1613,7 +1622,7 @@ class Worker(QObject):
         self.finished.emit()
 
 
-class Electron_GUI_3layer_smaller_spacer(Electron, EnvExperiment):
+class Electron_GUI_3layer_smaller_spacer_develop(Electron, EnvExperiment):
     def build(self):
         Electron.build(self)
 
