@@ -56,7 +56,7 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
         
         start_devices.Devices.start_rigol(self)
         self.load_DAC()
-        # self.kernel_run_initial()
+        self.kernel_run_initial()
         print("start")
         self.kernel_run_tickle_experiment()
         print("{:d} finished".format(self.scheduler.rid) )
@@ -65,7 +65,11 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
     def kernel_run_initial(self):
         self.core.reset()
         self.core.break_realtime()
-        
+        ### NOTE: update 9/9/2025, initializing outside of main exp
+        self.dds_tickle.cpld.init() 
+        self.dds_tickle.init()
+        self.dds_tickle.set_att(self.att*dB)
+        ###
         for i in range(self.number_of_datapoints):
             self.core.break_realtime()
             t_wait = 100
@@ -103,9 +107,9 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
 
         self.core.reset()
         self.core.break_realtime()
-        self.dds_tickle.cpld.init()
-        self.dds_tickle.init()
-        self.dds_tickle.set_att(self.att*dB)
+        # self.dds_tickle.cpld.init()
+        # self.dds_tickle.init()
+        # self.dds_tickle.set_att(self.att*dB)
         delay(self.t_initial_delay*s) # wait for a while before starting the experiment
         for i in range(self.number_of_datapoints):
             self.core.break_realtime()
@@ -113,7 +117,7 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
             freq_tickle = self.trap_freqs[i]
             t = now_mu()
             self.dds_tickle.set(freq_tickle*MHz, phase=0., ref_time_mu=t)
-            self.dds_tickle.sw.on()
+            # self.dds_tickle.sw.on() NOTE: update 9/9/2025, moving the switch on/off in each repetition
             if self.continuous_loading:
                 self.ttl_390.on()
             count_tot = 0
@@ -127,9 +131,11 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
                         if not self.continuous_loading:
                             self.ttl_390.off()
                         self.ttl_Tickle.on()
+                        self.dds_tickle.sw.on() # NOTE: update 9/9, moving the switch on/off in each repetition
                     delay(self.t_wait*us)
                     with parallel:
                         self.ttl_Tickle.off()
+                        self.dds_tickle.sw.off() # NOTE: update 9/9, moving the switch on/off in each repetition
                         self.ttl_Extraction.pulse(2*us)
                         self.ttl_TimeTagger.pulse(2*us)
                         with sequential:
@@ -143,7 +149,7 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
                         count = 1
                     count_tot += count
                     delay(10*us)
-            self.dds_tickle.sw.off()
+            # self.dds_tickle.sw.off() NOTE: update 9/9, moving the switch on/off in each repetition
             # cycle_duration = t_load+self.t_wait+2+self.t_delay/1000+self.time_window_width/1000+1
             self.mutate_dataset('count_tickle',i,count_tot)
 

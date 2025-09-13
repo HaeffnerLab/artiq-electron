@@ -24,7 +24,7 @@ class pulse_sequence(HasEnvironment):
         self.setattr_argument('ttl_ch_390',NumberValue(default=16,min=0,max=23,ndecimals=0,step=1,type='int'), 
                                                           group='TTL Channels', 
                                                           tooltip = "use this channel to trigger AOM, connect to switch near VCO and AOM") 
-        self.setattr_argument('ttl_ch_Tickle',NumberValue(default=2,min=0,max=23,ndecimals=0,step=1,type='int'), 
+        self.setattr_argument('ttl_ch_Tickle',NumberValue(default=23,min=0,max=23,ndecimals=0,step=1,type='int'), 
                                                           group='TTL Channels', 
                                                           tooltip = "use this channel to trigger R&S for tickle pulse, connect to R&S") 
 

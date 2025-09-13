@@ -68,7 +68,7 @@ class XYPlot(pyqtgraph.PlotWidget):
                 # Zoom to only data points with positive y.
                 if len(np.where(self.latest_y >= 0)[0]) > 0:
                     if self.args.window is not None:
-                        right_index = np.where(self.latest_y >= 0)[0][-1]
+                        right_index = max(np.where(self.latest_y >= 0)[0][-1], 9)
                         indices = np.arange(max(0, right_index - self.args.window),
                                             right_index)
                         x_min = np.min(self.latest_x[indices])

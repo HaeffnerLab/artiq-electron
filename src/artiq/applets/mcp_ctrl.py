@@ -18,7 +18,7 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5, print_log=Fa
     rm = visa.ResourceManager()
     instruments = rm.list_resources()
     # instruments
-    usb = list(filter(lambda x: 'USB' in x, instruments))
+    usb = list(filter(lambda x: ('USB' in x and 'ASRL' not in x), instruments))
     if len(usb) != 1:
         print('Bad instrument list', instruments)
         sys.exit(-1)
