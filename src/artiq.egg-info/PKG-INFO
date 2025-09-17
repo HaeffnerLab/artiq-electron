@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: artiq
 Version: 6
 Summary: Advanced Real-Time Infrastructure for Quantum physics
@@ -28,6 +28,15 @@ Requires-Dist: pyqtgraph
 Requires-Dist: pygit2
 Requires-Dist: pythonparser
 Requires-Dist: python-Levenshtein
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: home-page
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary
 
 .. Always keep doc/manual/introduction.rst synchronized with this file, with the exception of the logo.
 

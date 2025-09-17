@@ -703,7 +703,7 @@ class Electron(HasEnvironment):
     #     print("Loaded dac voltages")
 
 class rigol():
-    def __init__(self,ip=115,pulse_width_ej=800.E-9, pulse_delay_ej=2.E-9,offset_ej=0,amplitude_ej=-20,phase=0,period_ej=1000.E-9,sampling_time=2.E-9):
+    def __init__(self,ip=104,pulse_width_ej=800.E-9, pulse_delay_ej=2.E-9,offset_ej=0,amplitude_ej=-20,phase=0,period_ej=1000.E-9,sampling_time=2.E-9):
         # self.sampling_time = sampling_time # 
         
         # initial phase != 0, voltage 0 ~ -20 V, need to manually adjust and see on the scope or AWG
@@ -1185,7 +1185,7 @@ class MyTabWidget(HasEnvironment,QWidget):
         #uncomment
         # self.rigol101 =  rigol(101,pulse_width_ej,pulse_delay_ej,offset_ej,amplitude_ej,phase,period_ej,sampling_time)
 
-        self.rigol113 =  rigol(115,pulse_width_ej,pulse_delay_ej,offset_ej,amplitude_ej,phase,period_ej,sampling_time)
+        self.rigol113 =  rigol(104,pulse_width_ej,pulse_delay_ej,offset_ej,amplitude_ej,phase,period_ej,sampling_time)
 
         #uncomment
         # self.rigol101.run()

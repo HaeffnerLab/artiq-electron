@@ -57,7 +57,7 @@ class tickle_experiment(DAC, pulse_sequence, EnvExperiment):
         start_devices.Devices.start_rigol(self)
         self.load_DAC()
         self.kernel_run_initial()
-        print("start")
+        print(">>> Start")
         self.kernel_run_tickle_experiment()
         print("{:d} finished".format(self.scheduler.rid) )
 

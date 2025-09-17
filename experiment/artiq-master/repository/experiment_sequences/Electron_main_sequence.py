@@ -1,7 +1,7 @@
 from artiq.experiment import *
 import numpy as np
 
-import pulse_sequence
+import extraction_sequence as pulse_sequence
 import start_devices
 import load_DAC
 from load_DAC import DAC

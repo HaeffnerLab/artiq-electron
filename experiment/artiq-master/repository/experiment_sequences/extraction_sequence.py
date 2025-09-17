@@ -1,5 +1,5 @@
 from artiq.experiment import *
-import Constants
+from Constants import Constants
 import Variables
 
 
@@ -31,7 +31,8 @@ class pulse_sequence(HasEnvironment):
         self.setattr_device('scheduler') # scheduler used
         # self.setattr_device("sampler0")
         # Variables.Variables.build_pulse_sequence(self)
-        Constants.Constants.build(self)
+        # Constants.Constants.build(self)
+        Constants.build(self)
 
     @kernel
     def run(self):

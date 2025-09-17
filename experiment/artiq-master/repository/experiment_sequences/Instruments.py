@@ -1,8 +1,14 @@
 import vxi11
 import numpy as np
+import pyvisa as visa 
+from artiq.language.core import rpc
+from artiq.language.types import TFloat
+# import time 
+# from time import sleep 
+# from qcodes_contrib_drivers.drivers.Valon.Valon_5015 import Valon5015
 
 class rigol():
-    def __init__(self,ip=115,pulse_width_ej=800.E-9, pulse_delay_ej=2.E-9,offset_ej=0,amplitude_ej=-20,phase=0,period_ej=1000.E-9,sampling_time=2.E-9):
+    def __init__(self,ip=104,pulse_width_ej=800.E-9, pulse_delay_ej=2.E-9,offset_ej=0,amplitude_ej=-20,phase=0,period_ej=1000.E-9,sampling_time=2.E-9):
         # self.sampling_time = sampling_time # 
         
         # initial phase != 0, voltage 0 ~ -20 V, need to manually adjust and see on the scope or AWG
@@ -98,3 +104,72 @@ wait_time = 4000E-6
 for freq_trapfreq in frequencies:
     rs.run(freq_trapfreq,amp_trapfreq)
 '''
+
+class SSA3032X_R: 
+    def __init__(self, ip='TCPIP::192.168.1.101::INSTR', N_AVG=100, data_trace=3):
+        rm = visa.ResourceManager()
+        self.SSA = rm.open_resource(ip)
+        self.N_AVG = N_AVG
+        self.SSA.write(f":AVERage:TRACe{data_trace}:COUNt {N_AVG}")
+        self.data_trace = data_trace
+        print('>>> Initialized SSA 3032X-R')#, self.SSA.query("*IDN?"))
+    
+    def set_N_AVG(self, N):
+        self.N_AVG = N 
+        self.SSA.write(f":AVERage:TRACe{self.data_trace}:COUNt {N}")
+        print(f'>>> Set N_AVG to {N}')
+
+    @rpc(flags={"async"})
+    def reset_avg(self, trace=0): 
+        self.SSA.write(f":AVERage:TRAC{trace}:CLEar")
+
+    # @rpc(flags={"async"})
+    def get_data(self, trace=0):
+        trace = self.data_trace if trace ==0 else trace
+        # self.SSA.write(f":AVERage:TRAC{trace}:CLEar")
+        # while int(self.SSA.query(f":AVERage:TRACe{trace}?")) < self.N_AVG: 
+        #     continue
+
+        data_str_C = self.SSA.query(f":TRACe{trace}:DATA?")
+        return np.array([float(val) for val in data_str_C.split(',')])
+    
+    # @rpc(flags={"async"})
+    def get_tot_power_nW(self, trace=0) -> TFloat: 
+        trace = self.data_trace if trace ==0 else trace
+        # self.SSA.write(f":AVERage:TRAC{trace}:CLEar")
+        # while int(self.SSA.query(f":AVERage:TRACe{trace}?")) < self.N_AVG: 
+        #     continue
+        data_str_C = self.SSA.query(f":TRACe{trace}:DATA?")
+        data_dBm = np.array([float(val) for val in data_str_C.split(',')])
+        # data_dBm = self.get_data(trace) 
+        data_mW = sum(10**(data_dBm/10))
+        return float(data_mW)*1e6 
+
+    
+
+class Valon: 
+    def __init__(self, ip='ASRL/dev/ttyUSB0::INSTR', freq=1452e6, power=0): 
+        valon = Valon5015(name="Valon", address=ip)
+        valon.frequency(freq)
+        valon.offset(0)
+        valon.power(power)
+        valon.modulation_db(0)
+        valon.modulation_frequency(1)
+        valon.low_power_mode_enabled(True)
+        valon.buffer_amplifiers_enabled(True)
+        status = valon.status()
+        self.valon = valon
+        print(status)
+
+    def set_freq(self, freq):
+        self.valon.frequency(freq)
+
+    def set_power(self, power):
+        self.valon.power(power)
+    
+    def turn_on(self):
+        self.valon.buffer_amplifiers_enabled(True)
+
+    def turn_off(self):
+        self.valon.buffer_amplifiers_enabled(False)
+        #self.valon.low_power_mode_enabled(False) # ignored for now since unsure about the locking issues

@@ -449,7 +449,6 @@ artiq/gui/flowlayout.py
 artiq/gui/fuzzy_select.py
 artiq/gui/log.py
 artiq/gui/logo.svg
-artiq/gui/logo_ver.svg
 artiq/gui/models.py
 artiq/gui/scanwidget.py
 artiq/gui/scientific_spinbox.py

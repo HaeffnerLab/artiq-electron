@@ -292,7 +292,16 @@ def main():
                 exp_inst = exp((device_mgr, dataset_mgr, argument_mgr, {}))
                 put_completed()
             elif action == "prepare":
-                exp_inst.prepare()
+                ## Update 9/12/2025: added try-except to catch errors in prepare()
+                try:
+                    exp_inst.prepare()
+                except:
+                    try:
+                        write_results()
+                    except:
+                        print(">>> No results to write")
+                    raise
+                ##
                 put_completed()
             elif action == "run":
                 run_time = time.time()

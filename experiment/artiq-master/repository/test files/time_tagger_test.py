@@ -18,8 +18,8 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 
-sys.path.append('/usr/lib/python3/dist-packages')
-import TimeTagger
+# sys.path.append('/usr/lib/python3/dist-packages')
+# import TimeTagger
 
 
 class time_tagger_test(EnvExperiment):
