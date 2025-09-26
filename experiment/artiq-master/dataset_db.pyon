@@ -56,8 +56,8 @@
     "optimize.parameter.start_freq": 1.0,
     "optimize.parameter.t_acquisition": 200.0,
     "optimize.parameter.t_delay": 600.0,
-    "optimize.parameter.t_load": 3000.0,
-    "optimize.parameter.t_wait": 2000.0,
+    "optimize.parameter.t_load": 2000.0,
+    "optimize.parameter.t_wait": 20.0,
     "optimize.parameter.trigger_level": 0.06,
     "optimize.parameter.update_cycle": 5.0
 }

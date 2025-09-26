@@ -47,8 +47,9 @@ class ROI_count_with_driving(DAC, pulse_sequence, EnvExperiment):
         self.setattr_argument("SSA_data_trace", NumberValue(default=3,scale=1,ndecimals=0,step=1))
         self.setattr_argument("SSA_IP_addr", StringValue(default=f'TCPIP::192.168.1.101::INSTR'))
         # self.setattr_argument("SSA_flag_on_counts", BooleanValue(default=False))
+        self.setattr_argument("use_SSA", BooleanValue(default=True))
         self.setattr_device("ttl12")
-
+    
     def prepare(self):
         pulse_sequence.prepare(self)
         self.set_dataset('optimize.result.countrate_ROI',[-2]*self.number_of_datapoints,broadcast=True) # Number of pulses sent to ttl_MCP_in with ROI in optimize without accumulating
@@ -57,7 +58,8 @@ class ROI_count_with_driving(DAC, pulse_sequence, EnvExperiment):
         self.set_dataset('drive_freq',self.freq_drive,broadcast=True)
         self.set_dataset('att',self.att,broadcast=True)
         self.set_dataset('rid',self.scheduler.rid,broadcast=True)
-        self.SSA = SSA3032X_R(ip=self.SSA_IP_addr, N_AVG=self.N_SA_avg, data_trace=self.SSA_data_trace)
+        if self.use_SSA:
+            self.SSA = SSA3032X_R(ip=self.SSA_IP_addr, N_AVG=self.N_SA_avg, data_trace=self.SSA_data_trace)
         print(f">>> RID: {self.scheduler.rid}")
     
     
@@ -162,16 +164,18 @@ class ROI_count_with_driving(DAC, pulse_sequence, EnvExperiment):
                     if count > 0:
                         count = 1
                     count_tot += count
-                    i_avg += 1
-                    if i_avg == int(self.N_SA_avg): 
-                        self.SSA.reset_avg(trace=self.SSA_data_trace)
-                    if i_avg == int(2.2*self.N_SA_avg): 
-                        power = self.SSA.get_tot_power_nW(trace=self.SSA_data_trace) 
+                    if self.use_SSA:
+                        i_avg += 1
+                        if i_avg == int(self.N_SA_avg): 
+                            self.SSA.reset_avg(trace=self.SSA_data_trace)
+                        if i_avg == int(2.2*self.N_SA_avg): 
+                            power = self.SSA.get_tot_power_nW(trace=self.SSA_data_trace) 
                     delay(10*us)
             
             # cycle_duration = t_load+self.t_wait+2+self.t_delay/1000+self.time_window_width/1000+1
             self.mutate_dataset('optimize.result.countrate_ROI',i,count_tot)
-            self.mutate_dataset('optimize.result.SSA_power',i,power)
+            if self.use_SSA:
+                self.mutate_dataset('optimize.result.SSA_power',i,power)
 
 
     # @kernel

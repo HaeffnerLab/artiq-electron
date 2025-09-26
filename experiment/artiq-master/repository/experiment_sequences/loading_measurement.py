@@ -32,13 +32,19 @@ class loading_experiment(DAC, pulse_sequence, EnvExperiment):
         self.setattr_argument('t_load_stop',NumberValue(default=100,unit='us',scale=1,ndecimals=0,step=1)) #
         self.setattr_argument('step_size',NumberValue(default=10,unit='us',scale=1,ndecimals=0,step=1)) # step size
         self.setattr_argument('t_wait',NumberValue(default=100,unit='us',scale=1,ndecimals=0,step=1)) # wait time
-
+        self.setattr_argument("log_scale", BooleanValue(default=False))
+        self.setattr_argument('number_of_warmup_points',NumberValue(default=20,scale=1,ndecimals=0,step=1))
+        self.setattr_argument('number_of_log_data_points',NumberValue(default=20,scale=1,ndecimals=0,step=1))
         self.setattr_device("ttl12")
 
     def prepare(self):
         pulse_sequence.prepare(self)
-        self.number_of_datapoints = int((self.t_load_stop - self.t_load_start)/self.step_size + 1)
-        self.load_times = np.linspace(self.t_load_start, self.t_load_stop, self.number_of_datapoints)
+        if self.log_scale:
+            self.number_of_datapoints = self.number_of_log_data_points
+            self.load_times = np.logspace(np.log10(self.t_load_start), np.log10(self.t_load_stop), self.number_of_datapoints)
+        else:
+            self.number_of_datapoints = int((self.t_load_stop - self.t_load_start)/self.step_size + 1)
+            self.load_times = np.linspace(self.t_load_start, self.t_load_stop, self.number_of_datapoints)
         np.random.shuffle(self.load_times)
         self.set_dataset('count_load',[-50]*self.number_of_datapoints,broadcast=True)
         self.counts_tot = [0]*self.number_of_datapoints
@@ -54,6 +60,7 @@ class loading_experiment(DAC, pulse_sequence, EnvExperiment):
         start_devices.Devices.start_rigol(self)
         self.load_DAC()
         self.kernel_run_initial()
+        print(f">>> Start")
         self.kernel_run_load_experiment()
         print("{:d} finished".format(self.scheduler.rid) )
 
@@ -109,11 +116,11 @@ class loading_experiment(DAC, pulse_sequence, EnvExperiment):
         self.core.reset()
         self.core.break_realtime()
         
-        for i in range(self.number_of_datapoints):
+        for i in range(self.number_of_warmup_points):
             self.core.break_realtime()
             t_wait = 200
             t_load = 200
-            n_repetitions = 20000
+            n_repetitions = 1000
             count_tot = 0
             for j in range(n_repetitions):
                 self.core.break_realtime()

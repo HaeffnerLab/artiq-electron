@@ -26,7 +26,7 @@ class Urukul_CW(EnvExperiment):
         #  self.d2 = self.get_device("urukul0_ch2")
         #  self.d3 = self.get_device("urukul0_ch3")
          self.setattr_argument('att',NumberValue(default=10,unit='dB',scale=1,ndecimals=0,step=1)) #
-         self.setattr_argument('freq',NumberValue(default=100,unit='MHz',scale=1,ndecimals=0,step=1)) # 
+         self.setattr_argument('freq',NumberValue(default=100,unit='MHz',scale=1,ndecimals=3,step=1)) # 
          self.setattr_argument('duration',NumberValue(default=5,unit='s',scale=1,ndecimals=0,step=1)) # 
          self.setattr_device('scheduler') # scheduler used
          self.setattr_argument("apply_driving", BooleanValue(default=True))
