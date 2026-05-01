@@ -31,6 +31,7 @@ class XYPlot(pyqtgraph.PlotWidget):
         self.setLabel('left', ylabel)
         self.plot_error = getattr(args, 'plot_error')
         self.plot_fit = getattr(args, "plot_fit")
+        self.ylim = getattr(args, 'ylim')
         # Add a legend for fit curves.
         self.legend = self.addLegend()
         self.fit_curves = {}
@@ -66,9 +67,9 @@ class XYPlot(pyqtgraph.PlotWidget):
     def zoom_in_data(self):
         if (self.latest_x is not None and self.latest_y is not None and len(self.latest_x) > 0):
                 # Zoom to only data points with positive y.
-                if len(np.where(self.latest_y >= 0)[0]) > 0:
+                if len(np.where(self.latest_y >= self.ylim)[0]) > 0:
                     if self.args.window is not None:
-                        right_index = max(np.where(self.latest_y >= 0)[0][-1], 9)
+                        right_index = max(np.where(self.latest_y >= self.ylim)[0][-1], 9)
                         indices = np.arange(max(0, right_index - self.args.window),
                                             right_index)
                         x_min = np.min(self.latest_x[indices])
@@ -76,10 +77,10 @@ class XYPlot(pyqtgraph.PlotWidget):
                         y_min = np.min(self.latest_y[indices])
                         y_max = np.max(self.latest_y[indices])
                     else:
-                        x_min = np.min(self.latest_x[np.where(self.latest_y >= 0)])
-                        x_max = np.max(self.latest_x[np.where(self.latest_y >= 0)])
-                        y_min = np.min(self.latest_y[np.where(self.latest_y >= 0)])
-                        y_max = np.max(self.latest_y[np.where(self.latest_y >= 0)])
+                        x_min = np.min(self.latest_x[np.where(self.latest_y >= self.ylim)])
+                        x_max = np.max(self.latest_x[np.where(self.latest_y >= self.ylim)])
+                        y_min = np.min(self.latest_y[np.where(self.latest_y >= self.ylim)])
+                        y_max = np.max(self.latest_y[np.where(self.latest_y >= self.ylim)])
                 else: 
                     x_min = np.min(self.latest_x)
                     x_max = np.max(self.latest_x)
@@ -247,6 +248,14 @@ class XYPlot(pyqtgraph.PlotWidget):
     def data_changed(self, data, mods, title0):
         try:
             y = data[self.args.y][1]
+            if len(np.shape(y)) > 1: 
+                rid = data[self.args.rid][1]
+                if type(rid) is list:
+                    rid = rid[0]
+                if len(y) > int(rid)+1:
+                    y = y[int(rid)]
+                else: 
+                    y = y[-1]
         except KeyError:
             return
         x = data.get(self.args.x, (False, None))[1]
@@ -256,6 +265,10 @@ class XYPlot(pyqtgraph.PlotWidget):
             title = 'RID'
         if x is None:
             x = np.arange(len(y))
+        else: 
+            if len(np.shape(x)) > 1: 
+                x = np.array(x[-1]).flatten()
+                
         error = data.get(self.args.error, (False, None))[1]
         fit = data.get(self.args.fit, (False, None))[1]
 
@@ -420,6 +433,7 @@ def main():
     applet.argparser.add_argument('--window', type=int, default=None)
     try:
         applet.argparser.add_argument('--range', type=int, default=None)
+        applet.argparser.add_argument('--ylim', type=float, default=0.0)
         applet.argparser.add_argument('--xlabel', type=str, default='X')
         applet.argparser.add_argument('--ylabel', type=str, default='Y')
         applet.argparser.add_argument('--plot_error', action='store_true', help='Enable error bars in the plot')

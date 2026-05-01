@@ -34,3 +34,6 @@ misoc_*/
 /dataset_db.pyon
 /device_db*.py
 /test*
+.vscode/*
+*/.vscode/*
+experiment/artiq-master/.vscode/settings.json

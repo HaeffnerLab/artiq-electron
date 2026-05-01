@@ -19,10 +19,35 @@ def ramp_mcp_voltage(TODO, V1=2400, V2=2200, V3=200, sleeptime=0.5, print_log=Fa
     instruments = rm.list_resources()
     # instruments
     usb = list(filter(lambda x: ('USB' in x and 'ASRL' not in x), instruments))
-    if len(usb) != 1:
-        print('Bad instrument list', instruments)
-        sys.exit(-1)
-    odp = rm.open_resource(usb[0])
+    # if len(usb) != 1:
+    #     print('Bad instrument list', instruments)
+    #     sys.exit(-1)
+    
+    for address in usb:
+        try:
+            # Open a connection to the device
+            instrument = rm.open_resource(address)
+            
+            # Ask for the identification string (with a short timeout)
+            instrument.timeout = 2000 # 2 seconds
+            idn_response = instrument.query('*IDN?')
+            
+            # Check if 'RIGOL' is in the manufacturer's name
+            if 'RIGOL' in idn_response.upper() and 'DP832A' in idn_response.upper():
+                print(f"Rigol instrument found: {idn_response.strip()}")
+                odp = instrument
+                break # Exit the loop once we've found it
+            else:
+                # If it's not the one we want, close the connection
+                instrument.close()
+                
+        except:
+            # This can happen if the device is not a message-based instrument
+            # or is already in use. We can safely ignore it and move on.
+            print(f">>> Could not connect to or query {address}. Moving to next device.")
+            continue
+
+    # odp = rm.open_resource(usb[0])
     odp.write("INST:NSEL 1")
     odp.write("VOLT:PROT 10.1")
     odp.write("CURR:PROT 0.001")

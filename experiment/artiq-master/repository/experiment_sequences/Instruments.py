@@ -2,7 +2,7 @@ import vxi11
 import numpy as np
 import pyvisa as visa 
 from artiq.language.core import rpc
-from artiq.language.types import TFloat
+from artiq.language.types import TFloat, TArray
 # import time 
 # from time import sleep 
 # from qcodes_contrib_drivers.drivers.Valon.Valon_5015 import Valon5015
@@ -66,29 +66,48 @@ class rigol():
         return
 
 class RS():
-    def __init__(self, sampling_time=0):
-        self.inst = vxi11.Instrument('TCPIP::192.168.169.101::INSTR')
-        print(self.inst.ask('*IDN?'))
+    def __init__(self, ip='USB0::2733::84::104542::0::INSTR', triggered=False):
+        # self.inst = vxi11.Instrument(ip) 
+        rm = visa.ResourceManager()
+        self.inst = rm.open_resource(ip)
+        # print('>>>', self.inst.ask('*IDN?')) 
+        print('>>>', self.inst.query('*IDN?')) 
+        if triggered:
+            # self.inst.write(":SOUR:PULM:SOUR EXT")
+            # self.inst.write(":SOUR:PULM:STAT ON")
+            
+            self.inst.write(":SOUR:PULM:SOUR EXT")
+            self.inst.write(":SOUR:PULM:STAT ON")
+            self.inst.write(":OUTP ON")
 
-    def run(self, freq, power):
+        else:
+            self.inst.write("OUTPut OFF")
+            self.inst.write("SOURce:FREQuency: MODE CW")
+        # self.inst.write('SOURce:MOD:ALL:STAT ON')
+
+    def set_freq_pwr(self, freq, power):
         self.freq = freq
         self.power = power
         inst = self.inst
         # inst.write("OUTPut OFF")
         # Channel 1
         # print(inst.ask(":OUTPut:IMPedance?"))
-        inst.write("SOURce:FREQuency: MODE CW")
         inst.write("SOURce:FREQuency {:.9f}".format(self.freq))
         inst.write("SOURce:POWer:POWer {:.3f}".format(self.power))
-        inst.write('SOURce:MOD:ALL:STAT ON')
-        inst.write("OUTPut ON")
+        # inst.write("OUTPut ON")
         #print(inst.ask("OUTPUT?"))
-        return 
 
-    # def stop(self):
-    #     inst = self.inst
-    #     inst.write('OUTPut OFF')
-    #     inst.write('SOURce:MOD:ALL:STAT OFF')
+    def set_output_on(self): 
+        self.inst.write("OUTPut ON")
+
+    def set_output_off(self): 
+        self.inst.write("OUTPut OFF")
+
+    def set_all_off(self):
+        inst = self.inst
+        inst.write('OUTPut OFF')
+        inst.write('SOURce:MOD:ALL:STAT OFF')
+        inst.close()
 
 
 
@@ -114,6 +133,10 @@ class SSA3032X_R:
         self.data_trace = data_trace
         print('>>> Initialized SSA 3032X-R')#, self.SSA.query("*IDN?"))
     
+    def set_freq_range(self, freq, span): 
+        self.SSA.write("SENS:FREQ:CENT " +  str(freq) + " MHz")
+        self.SSA.write("SENS:FREQ:SPAN " +  str(span) + " MHz")
+
     def set_N_AVG(self, N):
         self.N_AVG = N 
         self.SSA.write(f":AVERage:TRACe{self.data_trace}:COUNt {N}")
@@ -124,7 +147,7 @@ class SSA3032X_R:
         self.SSA.write(f":AVERage:TRAC{trace}:CLEar")
 
     # @rpc(flags={"async"})
-    def get_data(self, trace=0):
+    def get_data(self, trace=0) -> TArray():
         trace = self.data_trace if trace ==0 else trace
         # self.SSA.write(f":AVERage:TRAC{trace}:CLEar")
         # while int(self.SSA.query(f":AVERage:TRACe{trace}?")) < self.N_AVG: 
