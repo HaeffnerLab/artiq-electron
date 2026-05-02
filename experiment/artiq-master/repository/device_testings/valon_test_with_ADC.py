@@ -19,75 +19,26 @@ import pyvisa as visa
 from time import sleep
 import matplotlib.pyplot as plt
 import numpy as np
+import importlib
+spec = importlib.util.spec_from_file_location("device_lib", "/home/electron/artiq/experiment/devices/base.py")
+device_lib = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(device_lib)
+Valon5015 = device_lib.Valon
 
 
-
-class Instrument: 
-    def __init__(self, address):
-        self.rm = visa.ResourceManager()
-        self.instrument = self.rm.open_resource(address)
-        self.instrument.timeout = 2000 # 2 seconds
-
-    def query(self, command):
-        return self.instrument.query(command)
-
-    def write(self, command):
-        self.instrument.write(command)
     
-    def close(self):
-        self.instrument.close() 
-
-class RigolDP832A(Instrument):
-    def __init__(self, address):
-        super().__init__(address)
-        idn_response = self.query('*IDN?')
-        if 'RIGOL' in idn_response.upper() and 'DP832A' in idn_response.upper():
-            print(f"Rigol DP832A found: {idn_response.strip()}")
-        else:
-            raise Exception("Connected instrument is not a Rigol DP832A.")
-    
-    def select_channel(self, channel):
-        self.write(f"INST:NSEL {channel}")
-
-    def set_voltage(self, channel, voltage):
-        self.select_channel(channel)
-        self.write(f'VOLT {voltage}') 
-    
-    def set_current(self, channel, current):
-        self.select_channel(channel)
-        self.write(f'CURR {current}')
-
-    def output_on(self, channel):   
-        self.select_channel(channel)
-        self.write(f'OUTP ON')    
-    
-    def output_off(self, channel):  
-        self.select_channel(channel)
-        self.write(f'OUTP OFF')  
-    
-    def measure_voltage(self, channel):
-        self.select_channel(channel)
-        response = self.query(f'MEAS:VOLT?')
-        return float(response.strip())
-    
-    def measure_current(self, channel):
-        self.select_channel(channel)
-        response = self.query(f'MEAS:CURR?')
-        return float(response.strip())  
-    
-class ADCTesting(EnvExperiment):
+class ValonTesting(EnvExperiment):
     def build(self):
         self.setattr_device("core")
         self.setattr_device("sampler0")
         self.setattr_device("scheduler")
-        self.set_default_scheduling(priority=-10)
         
         self.setattr_argument("save_data", BooleanValue(default=False), group="Data Saving")
         self.setattr_argument("time_interval", NumberValue(default=1, unit='s', scale=1, ndecimals=1, step=0.1), group="Data Saving")
         
 
     def prepare(self):
-        self.PSU = RigolDP832A('USB0::6833::3601::DP8B260200018::0::INSTR')
+        self.Valon = Valon5015(address='ASRL/dev/ttyUSB1::INSTR')
         self.set_dataset("current_temperature", 0.0, broadcast=True, archive=False)
         
         if self.save_data:
@@ -125,20 +76,20 @@ class ADCTesting(EnvExperiment):
     # This runs purely on the standard Python Host PC.
     def run(self):
         start_time = time.time()
-        self.PSU.set_voltage(3, 0)  # Start at 0V 
-        self.PSU.output_on(3)
-        voltage_steps = np.linspace(0, 5, 20)
-        for v in voltage_steps:
+        self.Valon.set_power(0)
+        self.Valon.output_on()
+        frequency_steps = np.linspace(-50, 50, 50)*1e6 + 1452e6
+        for f in frequency_steps:
             # 1. Mark exactly when this specific loop started
             loop_start = time.time() 
             
             # 2. Get the data
-            self.PSU.set_voltage(3, v)
+            self.Valon.set_frequency(f)
             temp = self.measure_single_point()
             
             # Use loop_start so the timestamp matches exactly when we asked for the data
             # current_time = loop_start - start_time 
-            self.update_datasets(temp, v)
+            self.update_datasets(temp, f/1e9)
             
             # 3. Check for pauses
             if self.scheduler.check_pause():
@@ -152,3 +103,5 @@ class ADCTesting(EnvExperiment):
             # Only sleep if we haven't already burned through our interval time
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
+        self.Valon.output_off()

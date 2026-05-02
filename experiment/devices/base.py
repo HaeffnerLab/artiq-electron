@@ -2,6 +2,7 @@ import pyvisa as visa
 from time import sleep
 import matplotlib.pyplot as plt
 import numpy as np
+import importlib
 
 
 
@@ -58,3 +59,49 @@ class RigolDP832A(Instrument):
         self.select_channel(channel)
         response = self.query(f'MEAS:CURR?')
         return float(response.strip())  
+    
+
+class Valon(Instrument): 
+    def __init__(self, address='ASRL/dev/ttyUSB1::INSTR'):
+        spec = importlib.util.spec_from_file_location("device_lib", "/home/electron/Qcodes_contrib_drivers/src/qcodes_contrib_drivers/drivers/Valon/Valon_5015.py")
+        device_lib = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(device_lib)
+        Valon5015 = device_lib.Valon5015
+        self.valon = Valon5015(name="Valon", address=address)
+        self.valon.frequency(1452e6)
+        self.valon.offset(0)
+        self.valon.power(0)
+        self.valon.modulation_db(0)
+        self.valon.modulation_frequency(1)
+        self.valon.low_power_mode_enabled(True)
+        self.valon.buffer_amplifiers_enabled(False)
+
+    def output_on(self):
+        self.valon.buffer_amplifiers_enabled(True)
+    
+    def output_off(self):
+        self.valon.buffer_amplifiers_enabled(False) 
+    
+    def set_frequency(self, freq_hz):
+        self.valon.frequency(freq_hz) 
+
+    def set_power(self, power_dbm):
+        self.valon.power(power_dbm) 
+    
+    def set_voltage(self, voltage): 
+        self.set_power(10 * np.log10((voltage**2) / 100))  # Convert voltage to power assuming 50 ohm load
+
+    def query(self, command):
+        print(">>> Valon does not support query operations.")
+        return
+
+    def write(self, command):
+        print(">>> Valon does not support write operations.")
+        return
+    
+    def close(self):
+        self.output_off()
+
+
+
+
