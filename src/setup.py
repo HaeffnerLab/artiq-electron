@@ -17,7 +17,7 @@ requirements = [
     "qasync", "pyqtgraph", "pygit2",
     #"llvmlite_artiq", 
     "pythonparser", "python-Levenshtein",
-    'sipyco', 'pyvisa', 'matplotlib',
+    'pyvisa', 'matplotlib',
 ]
 
 console_scripts = [
