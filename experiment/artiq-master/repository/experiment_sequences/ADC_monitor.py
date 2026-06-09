@@ -24,10 +24,24 @@ class ADC_Monitors(EnvExperiment):
         
         self.setattr_argument("time_interval", NumberValue(default=1, unit='s', scale=1, ndecimals=1, step=0.1))
         self.setattr_argument("displaying_digits", NumberValue(default=2, scale=1, ndecimals=0, step=1))
-        for i in range(8):
+        
+        # --- Channel Enable Flags ---
+        # Enable channels 0 and 1 by default
+        for i in range(2):
+            self.setattr_argument(f"enable_channel_{i}", BooleanValue(default=True), group="Channels")
+        # Channels 2-7 remain disabled by default
+        for i in range(2, 8):
             self.setattr_argument(f"enable_channel_{i}", BooleanValue(default=False), group="Channels")
-        for i in range(8):
+            
+        # --- Channel Names ---
+        # Specific names for channels 0 and 1
+        self.setattr_argument("channel_0_name", StringValue(default="RF Reflection"), group="Channel_names")
+        self.setattr_argument("channel_1_name", StringValue(default="RF Transmission"), group="Channel_names")
+        # Generic names for channels 2-7
+        for i in range(2, 8):
             self.setattr_argument(f"channel_{i}_name", StringValue(default=f"ADC Channel {i}"), group="Channel_names")
+            
+        # --- Data Saving ---
         for i in range(8):
             self.setattr_argument(f"save_channel_{i}_data", BooleanValue(default=False), group="Data Saving")
         

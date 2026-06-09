@@ -37,3 +37,4 @@ misoc_*/
 .vscode/*
 */.vscode/*
 experiment/artiq-master/.vscode/settings.json
+experiment/artiq-master/results/npz_results
