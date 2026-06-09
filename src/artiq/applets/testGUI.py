@@ -60,9 +60,8 @@ class App(QDialog):
 
 
   def load_daq(self):
-    input = str([x.text() for x in list(self.value_labels.values())])[1:-1]
-    cmd = ["artiq_client", "set-dataset" ,'voltages', input]
-
+    input = str([x.text() for x in list(self.value_labels.values())])
+    cmd = ["artiq_client",  "set-dataset", "voltages", f"\"{input}\""]
     process = subprocess.run(cmd)
     print(process.CompletedProcess)
     print("voltages loaded")
