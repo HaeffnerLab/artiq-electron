@@ -26,7 +26,8 @@ class zotino_calibration_keithley(EnvExperiment):
             )
         )
         self.setattr_argument("enable_measurement", BooleanValue(default=True))
-        self.setattr_argument("enable_save", BooleanValue(default=True))
+        # self.setattr_argument("enable_save", BooleanValue(default=True))
+        self.enable_save = True
         self.setattr_argument("save_folder", StringValue(default="/home/electron/artiq/experiment/zotino_calibration"))
         self.setattr_argument("file_prefix", StringValue(default="PUT_YOUR_PREFIX_HERE"))
         self.setattr_argument('total_zotino_channels', NumberValue(default=32, unit='', scale=1, ndecimals=0, step=1))
@@ -117,14 +118,22 @@ class zotino_calibration_keithley(EnvExperiment):
                 f"1. Connect the Keithley to the Zotino channel you want to calibrate.\n"
                 f"2. Enter that channel number (0 to {total_channels - 1}) below.\n\n"
                 f"Note: To recalibrate a channel, just enter its number again.\n\n"
-                f"Click 'Cancel' or leave blank to finish and save all data.",
+                f"Click 'OK' and leave blank to finish and save all data.\n\n"
+                f"Click 'Cancel' to finish without saving.\n\n",
                 parent=root
             )
             
             # If the user clicks Cancel or submits an empty box, exit the loop
-            if user_input is None or user_input.strip() == "":
+            if user_input is None: # None means Click Cancel
+                self.enable_save = False
+                print("\nUser cancelled calibration. Exiting WITHOUT saving data...")
+                break
+            if user_input.strip() == "": # Blank means click OK with blank input
                 print("\nUser finished calibration. Proceeding to save...")
                 break 
+            # if user_input is None or user_input.strip() == "":
+            #     print("\nUser finished calibration. Proceeding to save...")
+            #     break 
             
             # Validate that the user typed a valid integer
             try:

@@ -178,9 +178,13 @@ class Electron(HasEnvironment):
 
         self.old_c_file = False
         # FIXME!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! CHANGE THIS STRUCTURE!!!!!!!!!!!!!!!!!!!!!
-        self.c_file_csv = '/home/electron/artiq/experiment/control_files/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv'
+        # self.c_file_csv = '/home/electron/artiq/experiment/control_files/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv'
+        # self.c_file_csv = '/home/electron/artiq/experiment/control_files/cfile_merged_electrodes.csv'
+        self.c_file_csv = '/home/electron/artiq/experiment/control_files/cfile_fused_DC_0p025in_FEP_Shield_Manual_0.3_Mesh_100um_0.5um_L_ROI_100um.csv'
         # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_20260527_151716.txt' # NOTE: no resonator correction
-        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_20260527_corrected.txt'
+        # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_20260527_corrected.txt'
+        # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_new_PS_without_filter_20260618_162512.txt'
+        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_20260720_144139.txt'
         #'/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp_1Mcorrection2.txt'
     
         self.controlled_multipoles_dict = {"Ex":'Ex:', "Ey":'Ey:', "Ez":'Ez:', "U1":'U1:', "U2":'U2:', "U3":'U3:', "U4":'U4:', "U5":'U5:'}
@@ -369,9 +373,13 @@ class Electron(HasEnvironment):
             delay(500*us)
             m = self.dac_calibration_fit[1][self.dac_pins[i]]
             b = self.dac_calibration_fit[0][self.dac_pins[i]]
-            # self.zotino0.write_dac(self.dac_pins[i],(self.dac_pins_voltages[i]+b)/m - self.dac_manual_offset[self.dac_pins[i]])
+            #print(m)
+            #print(b)
+            #print((self.dac_pins_voltages[i]-b)/m)
+            #self.zotino0.write_dac(self.dac_pins[i],(self.dac_pins_voltages[i]-b)/m)
             self.zotino0.write_dac(self.dac_pins[i],self.dac_pins_voltages[i]/m)
             self.zotino0.write_offset(self.dac_pins[i],-b/m)
+            
         for pin in self.gnd:
             delay(500*us)
             self.zotino0.write_dac(pin,0.0)
@@ -1649,6 +1657,9 @@ class Worker(QObject):
 
 
 class Electron_GUI_3layer_smaller_spacer_DAC_only(Electron, EnvExperiment):
+    """
+    Real-time control for DAC voltages
+    """
     def build(self):
         Electron.build(self)
 

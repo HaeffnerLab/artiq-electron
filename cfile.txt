@@ -1,0 +1,1 @@
+/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_new_PS_without_filter_20260618_162512.txt

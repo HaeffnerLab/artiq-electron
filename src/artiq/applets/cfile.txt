@@ -1,0 +1,1 @@
+/home/electron/artiq/experiment/control_files/cfile_0p25in_spacing_0p5um_grid_separate_electrodes.csv
