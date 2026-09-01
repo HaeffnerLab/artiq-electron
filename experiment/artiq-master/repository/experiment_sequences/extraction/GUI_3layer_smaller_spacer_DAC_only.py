@@ -159,7 +159,32 @@ class Electron(HasEnvironment):
             "tr4":21,
             "tr5":7,
             }
-        
+
+
+        # self.pin_matching = {
+        #     "bl1":12,
+        #     "bl2":10,
+        #     "bl3":8,
+        #     "bl4":6,
+        #     "bl5":4,
+        #     "br1":13, #(need test)
+        #     "br2":17,
+        #     "br3":19,
+        #     "br4":21,
+        #     "br5":23,
+        #     "tl1":2,
+        #     "tl2":16,
+        #     "tl3":18,
+        #     "tl4":20,
+        #     "tl5":22,
+        #     "tr1":11,
+        #     "tr2":9,
+        #     "tr3":7,
+        #     "tr4":5,
+        #     "tr5":3,
+        #     } 
+
+
         self.gnd = [1,13,14,15,25] # gnd pins -> zotino channel
         self.use_amplifier = False
         self.max_voltage = 39
@@ -184,7 +209,7 @@ class Electron(HasEnvironment):
         # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_20260527_151716.txt' # NOTE: no resonator correction
         # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_20260527_corrected.txt'
         # self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_He3_new_PS_without_filter_20260618_162512.txt'
-        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_20260720_144139.txt'
+        self.dac_calibration_file = '/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_new_filter_board_500ms_20260817_160636.txt'
         #'/home/electron/artiq/experiment/zotino_calibration/zotino_calibration_3layer_smaller_spacer_with_amp_1Mcorrection2.txt'
     
         self.controlled_multipoles_dict = {"Ex":'Ex:', "Ey":'Ey:', "Ez":'Ez:', "U1":'U1:', "U2":'U2:', "U3":'U3:', "U4":'U4:', "U5":'U5:'}

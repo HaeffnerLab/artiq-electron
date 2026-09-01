@@ -16,7 +16,7 @@ class SpectrumAnalyzer(Configuration):
         if load_config:
             Configuration.build(self)
         self.setattr_argument('SSA_mode', StringValue(default='SA'), group="Spectrum Analyzer")
-        self.setattr_argument('SSA_freq_center',NumberValue(default=176.27e6,unit='Hz',scale=1,ndecimals=6,step=1), group="Spectrum Analyzer") # frequency center
+        self.setattr_argument('SSA_freq_center',NumberValue(default=175.95e6,unit='Hz',scale=1,ndecimals=6,step=1), group="Spectrum Analyzer") # frequency center
         self.setattr_argument('SSA_freq_span',NumberValue(default=0,unit='Hz',scale=1,ndecimals=6,step=1), group="Spectrum Analyzer") # frequency span
         self.setattr_argument('SSA_SWT',NumberValue(default=100e-3,unit='s',scale=1,ndecimals=3,step=1), group="Spectrum Analyzer") # sweep time
         self.setattr_argument('SSA_RBW',NumberValue(default=1e3,unit='Hz',scale=1,ndecimals=6,step=1), group="Spectrum Analyzer") # resolution bandwidth

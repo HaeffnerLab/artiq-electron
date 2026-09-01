@@ -4,7 +4,7 @@ import numpy as np
 
 from Config import Configuration
 
-class FETip(Configuration, HasEnvironment):
+class FETip(Configuration):
     """
     A field emission tip calibration/sweep code. All experiments using FEtip should inherit this block.
     Has two functions, one is to perform a normal sweep based on V_sweep range,
@@ -31,8 +31,8 @@ class FETip(Configuration, HasEnvironment):
         self.setattr_argument('FET_V_calibration_step',NumberValue(default=5,unit='V',scale=1,ndecimals=1,step=1),group="Field emission tip")
         self.setattr_argument('FET_V_warning',NumberValue(default=1400,unit='V',scale=1,ndecimals=1,step=1),group="Field emission tip")
         self.setattr_argument('FET_N_calibration_points',NumberValue(default=11,unit='',scale=1,ndecimals=1,step=1),group="Field emission tip")
-        self.setattr_argument('FET_I_max',NumberValue(default=35e-9,unit='A',scale=1,ndecimals=12,step=1e-9),group="Field emission tip")
-        self.setattr_argument('FET_I_nominal',NumberValue(default=30e-9,unit='A',scale=1,ndecimals=12,step=1e-9),group="Field emission tip")
+        self.setattr_argument('FET_I_max',NumberValue(default=35e-9,unit='nA',scale=1e-9,ndecimals=1,step=0.1),group="Field emission tip")
+        self.setattr_argument('FET_I_nominal',NumberValue(default=30e-9,unit='nA',scale=1e-9,ndecimals=1,step=0.1),group="Field emission tip")
         self.setattr_argument('FET_R_measure',NumberValue(default=200e6,unit='MOhm',scale=1e6,ndecimals=2,step=1),group="Field emission tip")
         self.setattr_argument('FET_N_avg',NumberValue(default=1,unit='',scale=1,ndecimals=0,step=1),group="Field emission tip")
         self.setattr_argument('FET_t_PSU_settle',NumberValue(default=2,unit='s',scale=1,ndecimals=1,step=1),group="Field emission tip")
@@ -76,11 +76,11 @@ class FETip(Configuration, HasEnvironment):
             self.set_dataset(f'FET.calibration.{i_cal}.all_V',all_V,broadcast=True)
             self.set_dataset(f'FET.calibration.{i_cal}.all_I',all_I,broadcast=True)
             i_cal += 1
-            max_I = max(I)
+            max_I = max(I[1:])
             if max_I < self.FET_I_nominal: 
                 V_tip = self.find_next_V(I, V)
             else: 
-                V_tip = float(V[np.where(I-self.FET_I_nominal >= 0)[0][0]])
+                V_tip = float(V[1:][np.where(I[1:]-self.FET_I_nominal >= 0)[0][0]])
             if V_tip >= self.FET_V_warning: 
                 print(f'>>> Tip voltage exceeding safe level at {self.V_warning}V, setting to max voltage')
                 V_tip = self.FET_V_warning
@@ -96,8 +96,8 @@ class FETip(Configuration, HasEnvironment):
         """
         adjusted_gradient = min(abs(I[-1] - I[-2])/abs(V[-1]-V[-2])*10, 0.1) # adding small 0.1 value to prevent overflow
         ## using 10x here is to estimate the exponential slope based on linear slope, using 10x correction factor
-        ratio = max(int(min((self.FET_I_nominal-max(I))/adjusted_gradient/self.FET_V_calibration_step, 10)), 1) # this way the ratio is controlled between 1-10
-        return V[np.argmax(I)] + self.FET_V_calibration_step * ratio
+        ratio = max(int(min((self.FET_I_nominal-max(I[1:]))/adjusted_gradient/self.FET_V_calibration_step, 10)), 1) # this way the ratio is controlled between 1-10
+        return max(V) + self.FET_V_calibration_step * ratio
     
     def run_FET_sweep(self):
         self.FEtip_PSU.ramp_up_ch(self.FET_ch_fixed, self.FET_V_fixed)
@@ -105,12 +105,15 @@ class FETip(Configuration, HasEnvironment):
         all_I = [] 
         all_V = self.FET_all_V
         self.FEtip_PSU.ramp_up_ch(self.FET_ch_sweep, all_V[0])
-        time.sleep(2*self.FET_t_PSU_settle)
-        self.multimeter.measure_V()
+        time.sleep(5*self.FET_t_PSU_settle)
+        # add a current check right after ramping up
+        # self.safety_check()
+        # self.multimeter.measure_V()
         for Vi in range(len(all_V)): 
             V = self.FET_all_V[Vi]
             self.FEtip_PSU.set_voltage(V) 
             time.sleep(self.FET_t_PSU_settle) 
+            # self.safety_check() # add safety check
             I_loc = []
             for _ in range(self.FET_N_avg):
                 I = self.multimeter.measure_V()/self.FET_R_measure
@@ -120,12 +123,23 @@ class FETip(Configuration, HasEnvironment):
             self.mutate_dataset('FET.all_V', Vi, V)
             self.mutate_dataset('FET.all_I', Vi, np.mean(I_loc)*1e9)
             self.mutate_dataset('FET.all_I_std', Vi, np.std(I_loc)*1e9)
-            if abs(I) >= self.FET_I_max: 
+            if abs(np.max(I_loc))*1e9 >= self.FET_I_max: 
                 print(f">>> Warning: Current {I} exceeds maximum allowed {self.FET_I_max}. Stopping sweep.")
                 break
         self.FEtip_PSU.ramp_down(0)
         self.FEtip_PSU.ramp_down_ch(self.FET_ch_fixed, 0)
         return all_I, all_V[:len(all_I)]
+
+    def safety_check(self):
+        """
+        Check if the current is too high, if so, ramp down the tip voltage and stop the experiment
+        """
+        I = self.multimeter.measure_V()/self.FET_R_measure*1e9
+        if I >= self.FET_I_max:
+            print(f">>> Warning: Current {I} exceeds maximum allowed {self.FET_I_max}. Stopping experiment.")
+            self.FEtip_PSU.ramp_down(0)
+            self.FEtip_PSU.ramp_down_ch(self.FET_ch_fixed, 0)
+            raise Exception("Current exceeds maximum allowed. Experiment stopped.")
 
 class FETipSweep(EnvExperiment, FETip): 
     """

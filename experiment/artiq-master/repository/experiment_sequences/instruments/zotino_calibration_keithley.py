@@ -82,6 +82,8 @@ class zotino_calibration_keithley(EnvExperiment):
         delay(100*us)
 
         self.zotino0.write_dac(channel, voltage)
+        delay(100*us)
+        self.zotino0.write_offset(channel, 0.0)  # Reset offset to zero for safety
         self.zotino0.load() # Instantly updates the output
     
     @kernel

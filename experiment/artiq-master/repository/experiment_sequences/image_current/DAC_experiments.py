@@ -47,7 +47,7 @@ class DAC(Configuration):
         self.excess_e = []#["trigger_level"]
         
         # gnd pins
-        self.gnd = [9,16,3,5,14] # gnd pins -> zotino channel
+        self.gnd = [13] # gnd pins -> zotino channel
         # if or not use amplifier
         self.use_amplifier = True
         # max absolute voltage of the zotino channel
@@ -84,7 +84,9 @@ class DAC(Configuration):
             delay(500*us)
             m = self.dac_calibration_fit[1][dac_pins[i]]
             b = self.dac_calibration_fit[0][dac_pins[i]]
-            self.zotino0.write_dac(dac_pins[i],(dac_pins_voltages[i]+b)/m - self.dac_manual_offset[dac_pins[i]])
+            self.zotino0.write_dac(dac_pins[i],(dac_pins_voltages[i])/m)
+            # self.zotino0.write_offset(dac_pins[i],self.dac_manual_offset[dac_pins[i]])
+            self.zotino0.write_offset(dac_pins[i],-b/m+self.dac_manual_offset[dac_pins[i]])
         for pin in self.gnd:
             delay(500*us)
             self.zotino0.write_dac(pin,0.0)
@@ -144,7 +146,7 @@ class DAC(Configuration):
         return dac_vs
         
 
-class load_DAC(DAC, EnvExperiment):
+class LoadDAC(DAC, EnvExperiment):
     """
     Load DAC voltages
     """

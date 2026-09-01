@@ -1,0 +1,578 @@
+"""
+feedback_experiments_rfsoc.py
+=============================
+
+`FeedbackExperiments` + a parallel RFSoC standby detector.
+
+The ARTIQ side is **unchanged** - the same loading / spectrum-analyser detection
+loop from `feedback_experiments.py`. This subclass only adds the RFSoC lifecycle:
+
+  prepare()                          run()                       analyze()
+  --------                           -----                       ---------
+  parent prepare (signal OFF)        parent run loop (unchanged)  parent analyze
+  -> RFSoC: auto-calibrate v_thresh                               -> RFSoC: stop
+     against the background                                          + fetch results
+  -> RFSoC: submit the standby
+     session (fire and forget)
+
+So: ARTIQ starts the RFSoC and sets its threshold from the background; the RFSoC
+then autonomously monitors at ~1 us / pass and captures a ~2 ms high-resolution
+DDR4 window around every event to its own disk; ARTIQ carries on exactly as before;
+at the end ARTIQ stops the session and pulls the results.
+
+Live applet
+-----------
+With ``rfsoc_applet`` on, a daemon thread polls the board every few seconds
+(file reads only - it NEVER touches the running detector) and updates broadcast
+datasets:
+
+  counters (from status.json; also written with the TRUE finals at stop):
+    rfsoc_crossings_total  (2) EVERY threshold crossing the tProc saw
+    rfsoc_event_count      (1) of those, how many TRIGGERED a full ~2 ms DDR4
+                           window capture (armed at the time; status "events")
+    rfsoc_pulse_fired      (3) of those, how many actually drove the feedback
+                           pulse = event_count + missed (if pulse_when_disarmed)
+    rfsoc_events_saved     of the DDR4 triggers, how many .npz were written
+                           (rest: host read-out thread still busy -> skipped)
+    rfsoc_mr_snapshots     short ~1.8 us MR-buffer fallback grabs (a crossing
+                           that could not get DDR4 because a capture was still
+                           draining) - event_mr_*.npz
+    rfsoc_missed           crossings while the DDR4 gate was busy (disarmed)
+    rfsoc_revivals         crossings during an active pulse sequence (no re-fire)
+    rfsoc_crossings_logged = crossings_total (kept for back-compat)
+    rfsoc_pps              tProc monitor-loop rate [passes/s], measured ONCE at
+                           startup. Nominal ~1.5e6 (~0.65 us/pass). Far below
+                           that => the loop was already stalled during that first
+                           second (a 2 ms blocking pulse / captures firing on an
+                           ever-present signal); it also skews rfsoc_crossing_t_s.
+  -> with a deliberately low v_thresh on a live signal you get a FLOOD of
+     mr_snapshots and only 1-2 DDR4 events; that is expected, not a bug. The
+     board's manifest.jsonl row count = events_saved + mr_snapshots.
+     crossings_total = event_count + missed + revivals.
+
+  crossings timeline (last ~400):
+    rfsoc_crossing_t_s     seconds into the run
+    rfsoc_crossing_amp     the detector metric SUM at each crossing, SAME units
+                           as v_thresh ('power' = |I|^2+|Q|^2, 'absum' = |I|+|Q|,
+                           summed over readout_length). One scalar per crossing.
+
+  newest DDR4 event waveform (kind="ddr4" - NOT an MR snapshot), envelope-
+  decimated (min/max per bin) to rfsoc_applet_points:
+    rfsoc_last_trace_us     time axis [us], 0 = start of the capture window
+    rfsoc_last_trace_mag    per-bin PEAK of |I,Q| = sqrt(I^2+Q^2), per sample
+    rfsoc_last_trace_mag_lo per-bin MIN of the same (plot both for the envelope)
+    rfsoc_last_event_npz    local path of the full-resolution .npz just fetched
+
+  Note _mag vs _amp: `_mag` is a sqrt(I^2+Q^2) *waveform* (the trace shape);
+  `_amp` is the scalar trigger-metric value of each crossing (compare to
+  v_thresh). Different quantities, not comparable numerically.
+
+Add applets, e.g.:
+    ${artiq_applet}plot_xy rfsoc_last_trace_mag --x rfsoc_last_trace_us
+    ${artiq_applet}plot_xy rfsoc_crossing_amp   --x rfsoc_crossing_t_s
+    ${artiq_applet}big_number rfsoc_event_count
+    ${artiq_applet}big_number rfsoc_mr_snapshots
+
+Requirements on the ARTIQ host:
+  * `ssh` (+ `rsync` for the final fetch; `scp` fallback otherwise) and an ssh
+    alias for the RFSoC (default name "rfsoc")
+  * this repo's `jupyter_notebooks/Feedback-drive/` reachable (for the client module);
+    override with the `RFSOC_STANDBY_CLIENT_DIR` env var if you moved it
+  * the board's passwordless-sudo rule for the venv python (README)
+
+Nothing here runs on an ARTIQ kernel - it is all host code.
+"""
+
+import json
+import os
+import sys
+import threading
+import time
+
+from artiq.experiment import *
+import numpy as np
+
+from feedback_experiments import FeedbackExperiments
+import artiq_rfsoc_standby as R
+
+def _load_rfsoc_client(host: str):
+    d = os.environ.get(
+        "RFSOC_STANDBY_CLIENT_DIR",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "jupyter_notebooks", "Feedback-drive"),
+    )
+    if d not in sys.path:
+        sys.path.insert(0, d)
+    import artiq_rfsoc_standby as R
+    R.RFSOC_HOST = host
+    return R
+
+
+class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
+    """FeedbackExperiments with an RFSoC standby detector running in parallel."""
+
+    def build(self):
+        FeedbackExperiments.build(self)
+        G = "RFSoC standby"
+        self.setattr_argument("rfsoc_enable", BooleanValue(default=True), group=G)
+        self.setattr_argument("rfsoc_host", StringValue("rfsoc"), group=G)
+
+        # detection / capture
+        self.setattr_argument(
+            "rfsoc_read_freq",
+            NumberValue(default=25.0, unit="MHz", scale=1, ndecimals=3, step=0.1),
+            group=G, tooltip="downconversion freq of the RFSoC detection readout "
+                             "(the signal frequency as it reaches the RFSoC ADC)")
+        self.setattr_argument(
+            "rfsoc_readout_length",
+            NumberValue(default=300, scale=1, ndecimals=0, step=10),
+            group=G, tooltip="detection integration window [decimated samples]; "
+                             "shorter -> lower latency, worse SNR")
+        self.setattr_argument(
+            "rfsoc_metric", EnumerationValue(["power", "absum"], default="power"),
+            group=G, tooltip="'power' = phase-independent |I|^2+|Q|^2 (3 dB = x2); "
+                             "'absum' = |I|+|Q| (faster, ~sqrt(2) phase ripple)")
+        # -- threshold: auto-calibrate against the background, or a fixed number --
+        self.setattr_argument(
+            "rfsoc_calibrate", BooleanValue(default=True), group=G,
+            tooltip="True  -> measure the background at start and set v_thresh; "
+                    "False -> use rfsoc_v_thresh_fixed (no background measurement)")
+        self.setattr_argument(
+            "rfsoc_v_thresh_fixed",
+            NumberValue(default=50000, scale=1, ndecimals=0, step=1000),
+            group=G, tooltip="v_thresh used when rfsoc_calibrate is off "
+                             "(same units as the detection metric sum)")
+        self.setattr_argument(
+            "rfsoc_use_external_calib", BooleanValue(default=False), group=G,
+            tooltip="use the v_thresh measured by a separate CalibrateRFSoCThreshold "
+                    "experiment (dataset rfsoc_calib_<tag>_v_thresh, or the board's "
+                    "calibration.json) instead of measuring the background here; "
+                    "overrides rfsoc_calibrate when a stored value is found")
+        self.setattr_argument(
+            "rfsoc_calib_tag", StringValue("shared"), group=G,
+            tooltip="which CalibrateRFSoCThreshold result to use (its rfsoc_calib_tag). "
+                    "Its read_freq / readout_length / metric must match this run.")
+        self.setattr_argument(
+            "rfsoc_margin_db",
+            NumberValue(default=3.0, unit="dB", scale=1, ndecimals=1, step=0.5),
+            group=G, tooltip="v_thresh = background_level x (+margin dB)")
+        self.setattr_argument(
+            "rfsoc_bg_percentile", StringValue("max"), group=G,
+            tooltip="background reference level for calibration: 'max' (v_thresh = "
+                    "margin dB above the LARGEST background sample) or a percentile "
+                    "like '99.9'")
+        self.setattr_argument(
+            "rfsoc_bg_seconds",
+            NumberValue(default=2.0, unit="s", scale=1, ndecimals=1, step=0.5),
+            group=G, tooltip="how long the RFSoC samples the background during "
+                             "calibration (longer -> the 'max' better approximates "
+                             "the true background max over a long detection run)")
+        self.setattr_argument(
+            "rfsoc_window_us",
+            NumberValue(default=2400.0, unit="us", scale=1, ndecimals=0, step=100),
+            group=G, tooltip="length of the DDR4 record captured per event")
+
+        # feedback pulse the RFSoC plays on a crossing (0 -> detect/record only)
+        self.setattr_argument(
+            "rfsoc_pulse_freq",
+            NumberValue(default=300.0, unit="MHz", scale=1, ndecimals=3, step=0.1),
+            group=G)
+        self.setattr_argument(
+            "rfsoc_pulse_voltage",
+            NumberValue(default=0.0, scale=1, ndecimals=3, step=0.05, min=0.0, max=1.0),
+            group=G, tooltip="0 -> RFSoC does NOT drive (detect + capture only)")
+        self.setattr_argument(
+            "rfsoc_pulse_length_us",
+            NumberValue(default=2000.0, unit="us", scale=1, ndecimals=0, step=100),
+            group=G)
+        self.setattr_argument("rfsoc_pulse_when_disarmed", BooleanValue(default=True),
+                              group=G, tooltip="still fire while the host drains DDR4")
+        self.setattr_argument("rfsoc_mr_fallback", BooleanValue(default=False),
+                              group=G, tooltip="a crossing that misses DDR4 (mid-copy) "
+                              "grabs a ~1.85 us / 4.42 GS/s MR-buffer snapshot instead "
+                              "(event_mr_*.npz)")
+        self.setattr_argument("rfsoc_pulse_blocking", BooleanValue(default=True),
+                              group=G, tooltip="True: exact pulse timing, no detection "
+                              "during the pulse. False: the tProc keeps monitoring "
+                              "through the pulse so a revival is detected + MR-captured "
+                              "(requires pulse_shape='const'; burst timing ~+/-few %)")
+        self.setattr_argument("rfsoc_edge_detect", BooleanValue(default=True),
+                              group=G, tooltip="fire once on a below->above crossing, "
+                              "not every pass the signal stays above threshold")
+        self.setattr_argument(
+            "rfsoc_edge_rearm_frac",
+            NumberValue(default=0.9, scale=1, ndecimals=2, step=0.05, min=0.1, max=1.0),
+            group=G, tooltip="hysteresis: signal must fall below v_thresh*this before "
+                             "it can cross again (1.0 = pure edge)")
+        self.setattr_argument("rfsoc_pulse_config", StringValue(""), group=G,
+                              tooltip="path to a JSON from pulse_designer.py - its "
+                              "pulse_* fields (delay / repeats / on / off / shape / "
+                              "ramp) override the simple settings above")
+        self.setattr_argument(
+            "rfsoc_cleanup_orphans", BooleanValue(default=True), group=G,
+            tooltip="before starting, stop any standby session still running on "
+                    "the board from an earlier run that was force-quit on the "
+                    "ARTIQ side (so you never have to `qick_standby stop` by hand)")
+        self.setattr_argument(
+            "rfsoc_max_seconds",
+            NumberValue(default=0.0, unit="s", scale=1, ndecimals=0, step=600),
+            group=G, tooltip="hard cap on the board session's lifetime (0 = none). "
+                             "Safety backstop: the session ends itself after this "
+                             "long even if ARTIQ never stops it.")
+        self.setattr_argument(
+            "rfsoc_calibrate_in_prepare", BooleanValue(default=True), group=G,
+            tooltip="calibrate (if rfsoc_calibrate) + start the session in "
+                    "prepare(), where the signal source is still off. Uncheck to "
+                    "call self.rfsoc_calibrate_and_start() yourself at the exact "
+                    "signal-off moment in run(). Ignored effect when rfsoc_"
+                    "calibrate is off (no signal-off timing needed).")
+
+        # results
+        self.setattr_argument(
+            "rfsoc_fetch", EnumerationValue(["light", "full", "none"], default="light"),
+            group=G, tooltip="light = manifest/crossings/status only; "
+                             "full = also the per-event .npz (can be GB)")
+        self.setattr_argument("rfsoc_fetch_dir", StringValue(""), group=G,
+                              tooltip="local dir for fetched results (default: rfsoc_<sid>)")
+
+        # live applet
+        self.setattr_argument(
+            "rfsoc_applet", BooleanValue(default=True), group=G,
+            tooltip="background thread updates datasets for a live applet "
+                    "(file reads only - never touches the detector)")
+        self.setattr_argument(
+            "rfsoc_applet_period_s",
+            NumberValue(default=3.0, unit="s", scale=1, ndecimals=1, step=0.5),
+            group=G, tooltip="how often the applet poller refreshes")
+        self.setattr_argument(
+            "rfsoc_applet_points",
+            NumberValue(default=2000, scale=1, ndecimals=0, step=500),
+            group=G, tooltip="envelope-decimate each captured event to this many "
+                             "points before it goes into a dataset")
+
+    # ------------------------------------------------------------------ #
+    def prepare(self):
+        FeedbackExperiments.prepare(self)
+        self._rfsoc = None
+        if not self.rfsoc_enable:
+            return
+        try:
+            self._rfsoc = _load_rfsoc_client(self.rfsoc_host)
+        except Exception as e:                       # missing client / ssh - don't kill the run
+            print("[rfsoc] client not available, standby disabled:", repr(e))
+            self._rfsoc = None
+            return
+        self._rfsoc_sid = "artiq_%s_%s" % (
+            getattr(getattr(self, "scheduler", None), "rid", "x"),
+            time.strftime("%Y%m%d_%H%M%S"))
+        self._rfsoc_started = False
+        if self.rfsoc_calibrate_in_prepare:
+            # signal source (Valon) is OFF at this point -> calibrate the threshold
+            self.rfsoc_calibrate_and_start()
+
+    def rfsoc_config(self) -> dict:
+        """The StandbyConfig dict sent to the RFSoC. Override to tweak channels etc."""
+        try:
+            bgp = float(self.rfsoc_bg_percentile)
+        except ValueError:
+            bgp = self.rfsoc_bg_percentile          # "max"
+        cfg = dict(
+            # one detection (readout 0) + one output (gen 1); DDR4/MR capture the
+            # detection channel (adc_record=-1 -> same as adc_wait)
+            dac_pulse=1, adc_wait=0, adc_record=-1,
+            read_freq=float(self.rfsoc_read_freq),
+            record_freq=float(self.rfsoc_pulse_freq),
+            pulse_freq=float(self.rfsoc_pulse_freq),
+            pulse_voltage=float(self.rfsoc_pulse_voltage),
+            pulse_length_us=float(self.rfsoc_pulse_length_us),
+            readout_length=int(self.rfsoc_readout_length),
+            window_us=float(self.rfsoc_window_us),
+            metric=str(self.rfsoc_metric),
+            v_thresh=("auto" if self.rfsoc_calibrate
+                      else int(self.rfsoc_v_thresh_fixed)),
+            threshold_margin_db=float(self.rfsoc_margin_db),
+            bg_percentile=bgp,
+            bg_seconds=float(self.rfsoc_bg_seconds),
+            pulse_when_disarmed=bool(self.rfsoc_pulse_when_disarmed),
+            mr_fallback=bool(self.rfsoc_mr_fallback),
+            pulse_blocking=bool(self.rfsoc_pulse_blocking),
+            edge_detect=bool(self.rfsoc_edge_detect),
+            edge_rearm_frac=float(self.rfsoc_edge_rearm_frac),
+            max_events=0,
+            max_seconds=float(self.rfsoc_max_seconds),   # 0 = run until ARTIQ stops it
+            outdir="standby_out/%s" % self._rfsoc_sid,
+        )
+        # a pulse_designer.py JSON overrides the pulse_* fields
+        pc = str(self.rfsoc_pulse_config).strip()
+        if pc:
+            with open(pc) as f:
+                pd = json.load(f)
+            for k, v in pd.items():
+                if k.startswith("pulse_"):
+                    cfg[k] = v
+            print("[rfsoc] pulse sequence from %s" % pc)
+        return cfg
+
+    # -- calibration-time apparatus state --------------------------------- #
+    # NOT IMPLEMENTED yet - fill these in once the ARTIQ device APIs for the
+    # Valon power / tip voltage / bias-ring / DC multipoles are available.
+    # `rfsoc_calib_setup` runs right before the RFSoC measures the background
+    # (put the apparatus into the state detection will run in, minus the
+    # signal); `rfsoc_calib_teardown` restores the detection state afterwards.
+    def rfsoc_calib_setup(self):
+        pass
+
+    def rfsoc_calib_teardown(self):
+        pass
+
+    def _rfsoc_external_vthresh(self):
+        """v_thresh from a separate CalibrateRFSoCThreshold run, or None. Tries
+        the persistent datasets it publishes, then the board's calibration.json."""
+        tag = str(self.rfsoc_calib_tag).strip() or "shared"
+        for key in ("rfsoc_calib_%s_v_thresh" % tag, "rfsoc_v_thresh"):
+            v = self.get_dataset(key, default=None)
+            if v is not None:
+                return float(v)
+        try:
+            cal = self._rfsoc.get_calibration("rfsoc_calib_%s" % tag)
+            if cal.get("v_thresh") is not None:
+                return float(cal["v_thresh"])
+        except Exception as e:                    # board unreachable / no file
+            print("[rfsoc] external calibration lookup failed:", repr(e))
+        return None
+
+    def rfsoc_resolve_threshold(self, cfg: dict) -> dict:
+        """Decide v_thresh for this run and write it into ``cfg``. Priority:
+          1. an external ``CalibrateRFSoCThreshold`` result (if
+             ``rfsoc_use_external_calib`` and a value is stored);
+          2. a fresh background measurement here (if ``rfsoc_calibrate``);
+          3. the fixed ``rfsoc_v_thresh_fixed``.
+        Returns the calibration dict (also stored on ``self._rfsoc_cal``)."""
+        R = self._rfsoc
+        if self.rfsoc_use_external_calib:
+            vth = self._rfsoc_external_vthresh()
+            if vth is not None:
+                cfg["v_thresh"] = int(vth)
+                print("[rfsoc] v_thresh = %d   (external, CalibrateRFSoCThreshold "
+                      "tag=%r)" % (int(vth), str(self.rfsoc_calib_tag)))
+                return {"v_thresh": int(vth), "calibrated": True,
+                        "source": "external", "calib_tag": str(self.rfsoc_calib_tag)}
+            print("[rfsoc] rfsoc_use_external_calib set but no stored calibration "
+                  "for tag=%r -- falling back" % str(self.rfsoc_calib_tag))
+
+        if self.rfsoc_calibrate:
+            print("[rfsoc] calibrating v_thresh (signal off, %.1f s, ref=%s) ..."
+                  % (cfg["bg_seconds"], cfg["bg_percentile"]))
+            self.rfsoc_calib_setup()
+            try:
+                cal = R.calibrate(cfg, self._rfsoc_sid,
+                                  margin_db=cfg["threshold_margin_db"],
+                                  bg_seconds=cfg["bg_seconds"], write_config=True)
+            finally:
+                self.rfsoc_calib_teardown()
+            print("[rfsoc] v_thresh = %s   (bg_level %s, +%s dB, %s samples, %s)"
+                  % (cal.get("v_thresh"), cal.get("bg_level"),
+                     cal.get("threshold_margin_db"), cal.get("n_samples"),
+                     cal.get("db_convention")))
+            cfg["v_thresh"] = cal["v_thresh"]
+            return dict(cal, source="measured")
+
+        cfg["v_thresh"] = int(self.rfsoc_v_thresh_fixed)
+        print("[rfsoc] v_thresh = %s   (fixed, no calibration)" % cfg["v_thresh"])
+        return {"v_thresh": int(self.rfsoc_v_thresh_fixed), "calibrated": False,
+                "source": "fixed"}
+
+    def rfsoc_calibrate_and_start(self):
+        """Call this with the **signal off**. Resolves v_thresh (external
+        calibration / fresh measurement / fixed -- see ``rfsoc_resolve_threshold``)
+        and launches the standby session (fire-and-forget)."""
+        R = self._rfsoc
+        if R is None or getattr(self, "_rfsoc_started", False):
+            return
+
+        if self.rfsoc_cleanup_orphans:
+            try:
+                killed = R.cleanup(exclude=self._rfsoc_sid)
+                if killed:
+                    print("[rfsoc] cleaned %d stale board session(s): %s"
+                          % (len(killed), ", ".join("%s(%s->%s)" % (
+                              k["sid"], k.get("state"), k.get("final_state"))
+                              for k in killed)))
+            except Exception as e:                    # never block the run on this
+                print("[rfsoc] orphan cleanup skipped:", repr(e))
+
+        cfg = self.rfsoc_config()
+
+        cal = self.rfsoc_resolve_threshold(cfg)
+        self._rfsoc_cal = cal
+
+        self.set_dataset("rfsoc_session_id", self._rfsoc_sid, broadcast=True)
+        self.set_dataset("rfsoc_calibration", json.dumps(cal), broadcast=True)
+        self.set_dataset("rfsoc_v_thresh", cal.get("v_thresh"), broadcast=True)
+        # provenance: the exact feedback-pulse sequence used this run goes into
+        # the HDF5, whether it came from args or from rfsoc_pulse_config
+        self.set_dataset("rfsoc_pulse_spec",
+                         json.dumps({k: v for k, v in cfg.items()
+                                     if k.startswith("pulse_") or k in
+                                     ("dac_pulse", "adc_wait", "adc_record")}),
+                         broadcast=True)
+        R.submit(cfg, self._rfsoc_sid)
+        self._rfsoc_started = True
+        print("[rfsoc] standby session '%s' started on %s" % (self._rfsoc_sid, self.rfsoc_host))
+
+    # ------------------------------------------------------------------ #
+    def run(self):
+        self._rfsoc_applet_stop = threading.Event()
+        self._rfsoc_applet_thread = None
+        try:
+            if not self.rfsoc_calibrate_in_prepare:
+                # not calibrated in prepare() -> the caller is expected to have
+                # arranged 'signal off' and can call rfsoc_calibrate_and_start()
+                # at the right point; do it now as a fallback if they didn't.
+                self.rfsoc_calibrate_and_start()
+            self._rfsoc_start_applet()
+            self.set_dataset("sa_run_t0_wall", time.time(), broadcast=True)  # SA loop start, ARTIQ-host clock
+            results, time_stamps = FeedbackExperiments.run(self)
+            sa_wall = getattr(self, "_sa_wall", {})
+            for rep in results:
+                self.set_dataset(f'all_meas_{rep}',np.array(results[rep]),broadcast=True)
+                self.set_dataset(f'time_stamps_{rep}',np.array(time_stamps[rep]),broadcast=True)
+                # absolute wall clock per saved SA trace -> correlate with the RFSoC
+                # detector (whose crossings/events carry board wall time). Both hosts
+                # are NTP-synced so t_wall values are directly comparable.
+                self.set_dataset(f'sa_wall_{rep}', np.array(sa_wall.get(rep, [])), broadcast=True)
+            print(">>> {:d} finished".format(self.scheduler.rid) )
+        finally:
+            self._rfsoc_applet_stop.set()
+            if self._rfsoc_applet_thread is not None:
+                self._rfsoc_applet_thread.join(timeout=10)
+            self.rfsoc_stop_and_fetch()
+
+    # -- live applet (background thread; only reads files off the board) --- #
+    def _rfsoc_dest(self) -> str:
+        """Local dir for this session's fetched files. A per-session subdir under
+        rfsoc_fetch_dir so successive runs don't overwrite each other's
+        manifest / status / traces."""
+        base = str(self.rfsoc_fetch_dir).strip()
+        if base:
+            return os.path.join(base, self._rfsoc_sid)
+        return "rfsoc_%s" % self._rfsoc_sid
+
+    # -- direct status.json fields --
+    _RFSOC_COUNTERS = (
+        # dataset name             status.json key
+        ("rfsoc_event_count",      "events"),          # crossings that TRIGGERED a DDR4 capture
+        ("rfsoc_events_saved",     "events_saved"),    # of those, DDR4 .npz actually written
+        ("rfsoc_missed",           "missed"),          # crossings while the DDR4 gate was busy
+        ("rfsoc_mr_snapshots",     "mr_snapshots"),    # short MR fallback captures
+        ("rfsoc_crossings_logged", "crossings_logged"),# EVERY threshold crossing the tProc saw
+        ("rfsoc_revivals",         "revivals"),        # crossings during an active pulse sequence
+    )
+    # datasets the applet also publishes but that are DERIVED, not status keys
+    _RFSOC_DERIVED = ("rfsoc_crossings_total", "rfsoc_pulse_fired")
+
+    def _rfsoc_publish_counters(self, st: dict):
+        for name, key in self._RFSOC_COUNTERS:
+            v = st.get(key)
+            if v is not None:
+                self.set_dataset(name, int(v), broadcast=True)
+        pps = st.get("passes_per_second")
+        if pps is not None:
+            self.set_dataset("rfsoc_pps", float(pps), broadcast=True)
+
+        ev = int(st.get("events") or 0)
+        miss = int(st.get("missed") or 0)
+        rev = int(st.get("revivals") or 0)
+        # (2) every threshold crossing = armed + disarmed + revival. crossings_logged
+        #     already equals this (the ring tail catches up to the tProc write head);
+        #     fall back to the sum if that field is missing.
+        total = st.get("crossings_logged")
+        self.set_dataset("rfsoc_crossings_total",
+                         int(total) if total is not None else ev + miss + rev,
+                         broadcast=True)
+        # (3) crossings that actually drove the feedback pulse: every armed crossing,
+        #     plus the disarmed ones when pulse_when_disarmed is set; revivals never
+        #     re-fire. (Derived from the firmware's fire sites, not a hw counter.)
+        pwd = bool((st.get("config") or {}).get("pulse_when_disarmed", True))
+        self.set_dataset("rfsoc_pulse_fired", ev + (miss if pwd else 0), broadcast=True)
+
+    def _rfsoc_start_applet(self):
+        if not (self.rfsoc_applet and self._rfsoc and getattr(self, "_rfsoc_started", False)):
+            return
+        for name in [n for n, _ in self._RFSOC_COUNTERS] + list(self._RFSOC_DERIVED):
+            self.set_dataset(name, 0, broadcast=True)
+        for k in ("rfsoc_crossing_t_s", "rfsoc_crossing_amp",
+                  "rfsoc_last_trace_us", "rfsoc_last_trace_mag", "rfsoc_last_trace_mag_lo"):
+            self.set_dataset(k, [], broadcast=True)
+        self._rfsoc_applet_thread = threading.Thread(
+            target=self._rfsoc_applet_loop, name="rfsoc-applet", daemon=True)
+        self._rfsoc_applet_thread.start()
+        print("[rfsoc] live applet poller running (%.1f s)" % self.rfsoc_applet_period_s)
+
+    def _rfsoc_applet_loop(self):
+        R = self._rfsoc
+        sid = self._rfsoc_sid
+        dest = self._rfsoc_dest()
+        last_ev = -1
+        while not self._rfsoc_applet_stop.wait(self.rfsoc_applet_period_s):
+            try:
+                st = R.poll(sid)
+                self._rfsoc_publish_counters(st)
+                nev = int(st.get("events") or 0)
+                pps = st.get("passes_per_second") or 1.0
+
+                cr = R.read_jsonl(sid, "crossings.jsonl", tail=400)
+                if cr:
+                    self.set_dataset("rfsoc_crossing_t_s",
+                                     [c.get("t_rel_s", c["iter"] / pps) for c in cr], broadcast=True)
+                    self.set_dataset("rfsoc_crossing_amp", [c["amp"] for c in cr], broadcast=True)
+
+                # refresh the trace only when a NEW full DDR4 window has landed
+                # (nev == status "events" == DDR4 capture count, not MR snapshots)
+                if nev > last_ev:
+                    t, mag_hi, meta = R.latest_event(
+                        sid, dest, n_points=int(self.rfsoc_applet_points), kind="ddr4")
+                    if t is not None:
+                        self.set_dataset("rfsoc_last_trace_us", list(map(float, t)), broadcast=True)
+                        self.set_dataset("rfsoc_last_trace_mag", list(map(float, mag_hi)), broadcast=True)
+                        self.set_dataset("rfsoc_last_trace_mag_lo",
+                                         list(map(float, meta.get("mag_lo", mag_hi))), broadcast=True)
+                        self.set_dataset("rfsoc_last_event_index", nev, broadcast=True)
+                        self.set_dataset("rfsoc_last_event_npz",
+                                         str(meta.get("local", "")), broadcast=True)
+                    last_ev = nev
+            except Exception as e:                     # never let the poller kill the run
+                print("[rfsoc] applet poll error:", repr(e))
+
+    def rfsoc_stop_and_fetch(self):
+        R = self._rfsoc
+        if R is None or not hasattr(self, "_rfsoc_sid"):
+            return
+        try:
+            st = R.stop(self._rfsoc_sid)
+            self._rfsoc_publish_counters(st)           # the TRUE finals, not the last poll
+            print("[rfsoc] stopped: state=%s events(DDR4)=%s events_saved=%s "
+                  "mr_snapshots=%s missed=%s crossings_logged=%s"
+                  % (st.get("state"), st.get("events"), st.get("events_saved"),
+                     st.get("mr_snapshots"), st.get("missed"), st.get("crossings_logged")))
+            self.set_dataset("rfsoc_status", json.dumps(st), broadcast=True)
+        except Exception as e:
+            print("[rfsoc] stop failed:", repr(e))
+        if self.rfsoc_fetch == "none":
+            return
+        dest = self._rfsoc_dest()
+        try:
+            R.fetch(self._rfsoc_sid, dest, full=(self.rfsoc_fetch == "full"))
+            print("[rfsoc] results fetched to %s  (full=%s -- event_*.npz %s)"
+                  % (dest, self.rfsoc_fetch == "full",
+                     "included" if self.rfsoc_fetch == "full" else "SKIPPED, set rfsoc_fetch=full"))
+            self.set_dataset("rfsoc_fetch_dir", dest, broadcast=True)
+        except Exception as e:
+            print("[rfsoc] fetch failed:", repr(e))
+
+
+class FeedbackWithRFSoCBackground(FeedbackWithRFSoC):
+    """Same, but forces `is_background=True` (used for the signal-off reference run)."""
+    def prepare(self):
+        self.is_background = True
+        FeedbackWithRFSoC.prepare(self)

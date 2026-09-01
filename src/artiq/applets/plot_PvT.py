@@ -84,6 +84,8 @@ class XYPlot(pyqtgraph.PlotWidget):
         dataset = {'x': x, 'y': y, 'title': title, 'color': color, 'scatter': scatter, 'fits': {}}
         if self.interpolate:
             interp_pen = pyqtgraph.mkPen(color, style=Qt.SolidLine, width=2)
+            if len(x) != len(y): 
+                x = np.linspace(x[0], x[-1], len(y))
             dataset["interp"] = self.plot(x, y, pen=interp_pen)
         self.datasets.append(dataset)
         self.legend.addItem(scatter, title)
@@ -240,6 +242,8 @@ class XYPlot(pyqtgraph.PlotWidget):
         x, y = np.array(x), np.array(y)
         color = self.get_next_color()
         interp_pen = pyqtgraph.mkPen(color, style=Qt.SolidLine, width=2.5)
+        if len(x) != len(y): 
+            x = np.linspace(x[0], x[-1], len(y))
         scatter = self.plot(x, y, pen=interp_pen, symbol='o', symbolSize=6,
                             symbolBrush=color)
         if error is not None and hasattr(error, '__len__') and len(error) == len(y):

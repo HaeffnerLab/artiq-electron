@@ -7,7 +7,7 @@ class Configuration(HasEnvironment):
 
     def build(self):
         self.setattr_device("ccb")
-        self.setattr_argument('config_file', StringValue(default='3layer_trapping_072726'), group="Device configuration")
+        self.setattr_argument('config_file', StringValue(default='3layer_trapping_080126'), group="Device configuration")
         self.setattr_device('scheduler') # scheduler used for RID
 
     def prepare(self):

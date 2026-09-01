@@ -288,8 +288,8 @@ class XYPlot(pyqtgraph.PlotWidget):
 
         # FIX: Provide explicit literal log coordinates when drawing in Log Y mode
         if self.log_y:
-            fill_level_arg = -4.0  # Fills correctly down to the 1e-4 floor
-            plot_probabilities = np.clip(probabilities, a_min=1e-4, a_max=None)
+            fill_level_arg = -5.0  # Fills correctly down to the 1e-4 floor
+            plot_probabilities = np.clip(probabilities, a_min=1e-5, a_max=None)
         else:
             fill_level_arg = 0.0
             plot_probabilities = probabilities

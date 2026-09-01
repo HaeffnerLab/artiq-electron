@@ -1,0 +1,154 @@
+from artiq.experiment import *
+import time
+import numpy as np
+from edes.experiments.devices.base import TestValon
+from DAC_experiments import DAC
+from FET_experiments import FETip
+from SA_experiments import SpectrumAnalyzer
+
+class FeedbackExperiments(DAC, SpectrumAnalyzer, FETip):
+    """
+    A template for loading experiments with data taking only when observing a signal, and can do feedback
+    operations based on the observed signal.
+    """
+    def build(self):
+        FETip.build(self)
+        SpectrumAnalyzer.build(self, load_config=False) # no need to load config again since FETip already loads it
+        DAC.build(self, load_config=False)
+        
+        self.setattr_argument('P_load',NumberValue(default=12,unit='dBm',scale=1,ndecimals=1,step=0.1),group="Loading parameters") # load at this power
+        self.setattr_argument('P_detect',NumberValue(default=5,unit='dBm',scale=1,ndecimals=1,step=0.1),group="Loading parameters") # detect at this power
+        self.setattr_argument('P_detect_min',NumberValue(default=3.5,unit='dBm',scale=1,ndecimals=1,step=0.1),group="Loading parameters") # decr RF power if signal seen and lowest power here 
+        self.setattr_argument('delta_P_step',NumberValue(default=-0.5,unit='dBm',scale=1,ndecimals=2,step=0.1),group="Loading parameters") # step at which RF power decreases if signal seen
+        self.setattr_argument('P_signal_threshold',NumberValue(default=-60,unit='dBm',scale=1,ndecimals=1,step=0.1),group="Loading parameters") # threshold to determine if signal is seen
+        self.setattr_argument('t_load',NumberValue(default=20,unit='s',scale=1,ndecimals=3,step=1), group="Loading parameters") # load time, load for this long if no signal seen in between
+        self.setattr_argument('t_data',NumberValue(default=1,unit='s',scale=1,ndecimals=3,step=1), group="Loading parameters") # wait time, reload if no signal seen in this time
+        self.setattr_argument('t_initial_delay',NumberValue(default=5,unit='s',scale=1,ndecimals=3,step=1), group="Loading parameters") # delay time at the beginning of the experiment 
+        self.setattr_argument('t_rest',NumberValue(default=1,unit='s',scale=1,ndecimals=3,step=1), group="Loading parameters") # delay time in between repetitions
+        self.setattr_argument('N_repetition',NumberValue(default=30,scale=1,ndecimals=0,step=1), group='Loading parameters') # Number of repetitions
+        # self.setattr_argument('tip_off_during_data',BooleanValue(default=True), group='Loading parameters') # A flag to indicate whether the tip is turned off during data taking
+        self.setattr_argument('V_off_change',NumberValue(default=200,unit='V',scale=1,ndecimals=0,step=1), group="Loading parameters") # V_off = V_tip - V_off_change 
+        self.setattr_argument('instantly_switching_RF',BooleanValue(default=False), group='Loading parameters') # Switching RF power instantly if detecting signal
+        self.setattr_argument('instantly_switching_tip',BooleanValue(default=False), group='Loading parameters') # Switching tip instantly if detecting signal
+        self.setattr_argument('recalibrate_V_tip',BooleanValue(default=True), group='Loading parameters') # Whether to calibrate the FET voltage/current during experiment
+        self.setattr_argument('is_background',BooleanValue(default=False), group='Loading parameters') # A flag to indicate whether the experiment is background
+        self.setattr_argument('save_all_data',BooleanValue(default=False), group='Loading parameters') # Save all data regardless of threshold
+                
+    def prepare(self):
+        FETip.prepare(self)
+        SpectrumAnalyzer.prepare(self)
+        DAC.prepare(self)
+        if not hasattr(self, 'Valon'): 
+            self.Valon = TestValon()
+        self.set_dataset('t_data',np.linspace(0, self.SSA_SWT, 751),broadcast=True)
+        self.set_dataset('SSA_power',[np.zeros(int(self.t_data/(self.SSA_SWT))*751)],broadcast=True)
+        self.set_dataset('Progress_index',[0, self.N_repetition],broadcast=True)
+        if self.is_background: 
+            self.recalibrate_V_tip = False
+        if self.recalibrate_V_tip: 
+            self.calibrate_FET()
+        self.load_DAC()
+
+    def run(self, show_progress=True):
+        """
+        Load data for some t_data, if signal seen, turn off loading, lower RF to P_detect, then continue to take data for t_data with time
+        resolution of every SSA_SWT. If no signal seen during loading, then stop loading at t_load. Using a counter to track the time. 
+        If no signal is seen by t_data runs out, reload for t_load. If signal is seen, clear the counter so that we wait for another t_data 
+        to see if signal revives. Data only saved in SWT increments if signal is seen in the interval.
+        """
+        if self.is_background:
+            V_on = self.FET_V_nominal - self.V_off_change
+            V_off = self.FET_V_nominal - self.V_off_change
+            # self.FET_V_fixed = 0
+        else:
+            V_on = self.FET_V_nominal
+            V_off = V_on - self.V_off_change
+        self.FEtip_PSU.ramp_up_ch(self.FET_ch_fixed, self.FET_V_fixed)
+        self.FEtip_PSU.select_ch(self.FET_ch_sweep)
+        self.FEtip_PSU.ramp_up(V_off)
+
+        self.SSA.clear_averaging()
+        data = self.SSA.get_full_trace()
+        self.SSA.set_div_scale(5) 
+        self.SSA.set_ref_level(max(data)+25)
+        self.SSA.clear_averaging() 
+        all_data = {} # recording data using dict to prevent issues with inhomogeneous data length
+        time_stamps = {}
+        N_data_load = int(self.t_load/self.SSA_SWT)
+        N_data_detect = int(self.t_data/self.SSA_SWT)
+        for N in range(self.N_repetition):
+            loc_data = []
+            loc_time = []
+            self.FEtip_PSU.set_voltage(V_on)
+            self.Valon.output_on() 
+            self.Valon.set_power(self.P_load)
+            i_load = 0
+            while i_load < N_data_load:
+                data = self.SSA.get_full_trace()
+                if max(data) >= self.P_signal_threshold: 
+                    loc_data.append(data)
+                    self.mutate_dataset('SSA_power', 0, np.array(data))
+                    loc_time.append(i_load*self.SSA_SWT)
+                    if self.instantly_switching_tip:
+                        self.FEtip_PSU.set_voltage(V_off) 
+                    if self.instantly_switching_RF: 
+                        break # stop loading if signal is seen
+                elif self.save_all_data: 
+                    loc_data.append(data)
+                    self.mutate_dataset('SSA_power', 0, np.array(data))
+                    loc_time.append(i_load*self.SSA_SWT)
+                
+                i_load += 1 # increment counter to track loading time
+
+            
+            i_detect = 0 # used to track how many more detection cycles still needs to be ran
+            i_detect_track = i_load + 1 # use a different counter to track the time stamp of the detection data
+            self.Valon.set_power(self.P_detect)
+            while i_detect < N_data_detect:
+                data = self.SSA.get_full_trace()
+                if max(data) >= self.P_signal_threshold: 
+                    loc_data.append(data)
+                    self.mutate_dataset('SSA_power', 0, np.array(data))
+                    loc_time.append(i_detect_track*self.SSA_SWT)
+                    if self.instantly_switching_RF: 
+                        self.Valon.set_power(max(self.P_detect+self.delta_P_step, self.P_detect_min)) # decrease RF power if signal is seen
+                    i_detect = 0 # reset detection counter if signal is seen
+                elif self.save_all_data: 
+                    loc_data.append(data)
+                    self.mutate_dataset('SSA_power', 0, np.array(data))
+                    loc_time.append(i_load*self.SSA_SWT)
+                    i_detect += 1 
+                else: 
+                    i_detect += 1 
+                i_detect_track += 1 # increment counter to track total detection time
+            
+            self.Valon.output_off()
+            all_data[N] = loc_data
+            time_stamps[N] = loc_time
+            if show_progress:
+                self.mutate_dataset('Progress_index', 0, N+1)
+            
+            time.sleep(self.t_rest)
+        
+        self.FEtip_PSU.ramp_down(0)
+        self.FEtip_PSU.ramp_down_ch(self.FET_ch_fixed, 0)
+        self.Valon.output_off()
+        self.SSA.clear_averaging()
+        return all_data, time_stamps
+
+class FeedbackWithSingleConfig(FeedbackExperiments, EnvExperiment):
+    """
+    Feedback experiments with a single config
+    """
+    def build(self): 
+        FeedbackExperiments.build(self) 
+
+    def prepare(self): 
+        FeedbackExperiments.prepare(self) 
+
+    def run(self): 
+        results, time_stamps = FeedbackExperiments.run(self) 
+        for rep in results: 
+            self.set_dataset(f'all_meas_{rep}',np.array(results[rep]),broadcast=True)
+            self.set_dataset(f'time_stamps_{rep}',np.array(time_stamps[rep]),broadcast=True)
+        print(">>> {:d} finished".format(self.scheduler.rid) )
