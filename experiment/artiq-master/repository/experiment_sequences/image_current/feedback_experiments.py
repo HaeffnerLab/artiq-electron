@@ -74,24 +74,31 @@ class FeedbackExperiments(DAC, SpectrumAnalyzer, FETip):
         self.SSA.clear_averaging() 
         all_data = {} # recording data using dict to prevent issues with inhomogeneous data length
         time_stamps = {}
-        self._sa_wall = {}   # {N: [time.time() per saved trace]} -- absolute wall clock,
-                             # for correlating with the RFSoC standby detector. time_stamps
-                             # is only i*SSA_SWT (nominal); real per-trace acquisition drifts.
+        # per saved SA trace, absolute wall clock -- for correlating with the RFSoC
+        # standby detector (time_stamps is only i*SSA_SWT, nominal). _sa_wall_start
+        # is stamped right BEFORE get_full_trace() (~= sweep start, only a couple
+        # SCPI writes late); _sa_wall right AFTER (adds the *OPC?/transfer lag).
+        # The sweep spans ~[start, start + SSA_SWT]; (end - start - SSA_SWT) is the
+        # readout overhead, and end-start >> SSA_SWT flags multi-sweep averaging.
+        self._sa_wall = {}
+        self._sa_wall_start = {}
         N_data_load = int(self.t_load/self.SSA_SWT)
         N_data_detect = int(self.t_data/self.SSA_SWT)
         for N in range(self.N_repetition):
             loc_data = []
             loc_time = []
             loc_wall = []
+            loc_wall_start = []
             self.FEtip_PSU.set_voltage(V_on)
             self.Valon.output_on() 
             self.Valon.set_power(self.P_load)
             i_load = 0
             while i_load < N_data_load:
+                _t_before = time.time()
                 data = self.SSA.get_full_trace()
                 if max(data) >= self.P_signal_threshold: 
                     loc_data.append(data)
-                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time())
+                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time()); loc_wall_start.append(_t_before)
                     loc_time.append(i_load*self.SSA_SWT)
                     if self.instantly_switching_tip:
                         self.FEtip_PSU.set_voltage(V_off) 
@@ -99,27 +106,28 @@ class FeedbackExperiments(DAC, SpectrumAnalyzer, FETip):
                         break # stop loading if signal is seen
                 elif self.save_all_data: 
                     loc_data.append(data)
-                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time())
+                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time()); loc_wall_start.append(_t_before)
                     loc_time.append(i_load*self.SSA_SWT)
                 
                 i_load += 1 # increment counter to track loading time
 
-            
+            self.FEtip_PSU.set_voltage(V_off) 
             i_detect = 0 # used to track how many more detection cycles still needs to be ran
             i_detect_track = i_load + 1 # use a different counter to track the time stamp of the detection data
             self.Valon.set_power(self.P_detect)
             while i_detect < N_data_detect:
+                _t_before = time.time()
                 data = self.SSA.get_full_trace()
                 if max(data) >= self.P_signal_threshold: 
                     loc_data.append(data)
-                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time())
+                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time()); loc_wall_start.append(_t_before)
                     loc_time.append(i_detect_track*self.SSA_SWT)
                     if self.instantly_switching_RF: 
                         self.Valon.set_power(max(self.P_detect+self.delta_P_step, self.P_detect_min)) # decrease RF power if signal is seen
                     i_detect = 0 # reset detection counter if signal is seen
                 elif self.save_all_data: 
                     loc_data.append(data)
-                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time())
+                    self.mutate_dataset('SSA_power', 0, np.array(data)); loc_wall.append(time.time()); loc_wall_start.append(_t_before)
                     loc_time.append(i_load*self.SSA_SWT)
                     i_detect += 1 
                 else: 
@@ -130,6 +138,7 @@ class FeedbackExperiments(DAC, SpectrumAnalyzer, FETip):
             all_data[N] = loc_data
             time_stamps[N] = loc_time
             self._sa_wall[N] = loc_wall
+            self._sa_wall_start[N] = loc_wall_start
             if show_progress:
                 self.mutate_dataset('Progress_index', 0, N+1)
             

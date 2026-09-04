@@ -345,6 +345,41 @@ def fetch(session_id: str, dest: str, full: bool = True) -> str:
     return dest
 
 
+def purge_remote(session_id: str, dest: str) -> int:
+    """Delete the remote session directory - but ONLY after verifying every
+    file that exists on the board also exists in ``dest`` (the local copy a
+    prior :func:`fetch` produced) with a matching size. Raises ``RuntimeError``
+    instead of deleting anything if that check fails, so a partial/failed
+    fetch can never cost you the only copy of the data. Returns the number of
+    remote files verified and removed."""
+    rdir = _remote_session_dir(session_id)
+    out = _ssh(f"cd {shlex.quote(rdir)} && find . -type f -printf '%P %s\\n'",
+               login=False)
+    remote_files = {}
+    for line in out.splitlines():
+        line = line.strip("\n")
+        if not line:
+            continue
+        name, _, size = line.rpartition(" ")
+        remote_files[name] = int(size)
+
+    if not remote_files:
+        raise RuntimeError(f"remote session dir {rdir} listed no files "
+                            f"(nothing to verify) -- refusing to purge")
+
+    for name, size in remote_files.items():
+        local_path = os.path.join(dest, name)
+        if not os.path.isfile(local_path):
+            raise RuntimeError(f"local copy is missing {name!r} -- refusing to purge {rdir}")
+        local_size = os.path.getsize(local_path)
+        if local_size != size:
+            raise RuntimeError(f"size mismatch for {name!r} (remote {size}, local "
+                                f"{local_size}) -- refusing to purge {rdir}")
+
+    _ssh(f"rm -rf {shlex.quote(rdir)}", login=False)
+    return len(remote_files)
+
+
 def wait(session_id: str, poll_interval: float = 10.0, timeout: float | None = None) -> dict:
     """Block until the session reports 'stopped' (or 'error'), or timeout."""
     t0 = time.time()

@@ -97,6 +97,61 @@ import numpy as np
 from feedback_experiments import FeedbackExperiments
 import artiq_rfsoc_standby as R
 
+
+# --------------------------------------------------------------------------- #
+# The ARTIQ worker <-> master link is a SINGLE un-locked pipe: every broadcast
+# set_dataset / mutate_dataset is a put_object(request) + get_object(reply) pair
+# on it (worker_impl.make_parent_action). The live applet below runs in a
+# background thread that also calls set_dataset, so its calls can interleave with
+# the main SA loop's mutate_dataset('SSA_power', ...) / mutate_dataset(
+# 'Progress_index', ...) and one thread then parses a fragment of the other's
+# PYON reply -> "SyntaxError: unmatched '}'". Serialize the request/reply pair
+# with a lock so concurrent callers are safe. During run() all pipe traffic is
+# worker-initiated pairs, so this is sufficient; the unpaired put/get in
+# worker_impl.main() are single-threaded and outside run(), and the per-thread
+# counter leaves them untouched. Idempotent; a no-op outside an ARTIQ worker.
+def _install_worker_ipc_lock():
+    try:
+        from artiq.master import worker_impl as _wi
+    except Exception:
+        return
+    if getattr(_wi, "_rfsoc_ipc_lock_installed", False):
+        return
+    if not (hasattr(_wi, "put_object") and hasattr(_wi, "get_object")):
+        return
+    _lock = threading.RLock()
+    _held = threading.local()
+    _orig_put, _orig_get = _wi.put_object, _wi.get_object
+
+    def _release_one():
+        n = getattr(_held, "n", 0)
+        if n > 0:
+            _held.n = n - 1
+            _lock.release()
+
+    def put_object(obj):
+        _lock.acquire()
+        _held.n = getattr(_held, "n", 0) + 1
+        try:
+            _orig_put(obj)
+        except BaseException:
+            _release_one()
+            raise
+
+    def get_object():
+        try:
+            return _orig_get()
+        finally:
+            _release_one()
+
+    _wi.put_object = put_object
+    _wi.get_object = get_object
+    _wi._rfsoc_ipc_lock_installed = True
+
+
+_install_worker_ipc_lock()
+
+
 def _load_rfsoc_client(host: str):
     d = os.environ.get(
         "RFSOC_STANDBY_CLIENT_DIR",
@@ -233,12 +288,16 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
                     "calibrate is off (no signal-off timing needed).")
 
         # results
-        self.setattr_argument(
-            "rfsoc_fetch", EnumerationValue(["light", "full", "none"], default="light"),
-            group=G, tooltip="light = manifest/crossings/status only; "
-                             "full = also the per-event .npz (can be GB)")
         self.setattr_argument("rfsoc_fetch_dir", StringValue(""), group=G,
-                              tooltip="local dir for fetched results (default: rfsoc_<sid>)")
+                              tooltip="local dir for fetched results (default: rfsoc_<sid>). "
+                                      "Every run always fetches the full session data, "
+                                      "including the per-event .npz (can be GB).")
+        self.setattr_argument(
+            "rfsoc_purge_after_fetch", BooleanValue(default=True), group=G,
+            tooltip="after a full fetch is verified complete (every remote file present "
+                    "locally with a matching size), delete the session's data off the "
+                    "RFSoC board to keep it from filling up. Never deletes anything if "
+                    "the fetch failed or verification finds a mismatch.")
 
         # live applet
         self.setattr_argument(
@@ -457,13 +516,18 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
             self.set_dataset("sa_run_t0_wall", time.time(), broadcast=True)  # SA loop start, ARTIQ-host clock
             results, time_stamps = FeedbackExperiments.run(self)
             sa_wall = getattr(self, "_sa_wall", {})
+            sa_wall_start = getattr(self, "_sa_wall_start", {})
             for rep in results:
                 self.set_dataset(f'all_meas_{rep}',np.array(results[rep]),broadcast=True)
                 self.set_dataset(f'time_stamps_{rep}',np.array(time_stamps[rep]),broadcast=True)
                 # absolute wall clock per saved SA trace -> correlate with the RFSoC
                 # detector (whose crossings/events carry board wall time). Both hosts
                 # are NTP-synced so t_wall values are directly comparable.
+                # sa_wall_start ~= sweep start (anchor on this); sa_wall ~= sweep end
+                # + readout lag.
                 self.set_dataset(f'sa_wall_{rep}', np.array(sa_wall.get(rep, [])), broadcast=True)
+                self.set_dataset(f'sa_wall_start_{rep}',
+                                 np.array(sa_wall_start.get(rep, [])), broadcast=True)
             print(">>> {:d} finished".format(self.scheduler.rid) )
         finally:
             self._rfsoc_applet_stop.set()
@@ -583,17 +647,22 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
             self.set_dataset("rfsoc_status", json.dumps(st), broadcast=True)
         except Exception as e:
             print("[rfsoc] stop failed:", repr(e))
-        if self.rfsoc_fetch == "none":
-            return
         dest = self._rfsoc_dest()
         try:
-            R.fetch(self._rfsoc_sid, dest, full=(self.rfsoc_fetch == "full"))
-            print("[rfsoc] results fetched to %s  (full=%s -- event_*.npz %s)"
-                  % (dest, self.rfsoc_fetch == "full",
-                     "included" if self.rfsoc_fetch == "full" else "SKIPPED, set rfsoc_fetch=full"))
+            R.fetch(self._rfsoc_sid, dest, full=True)
+            print("[rfsoc] results fetched to %s  (full -- event_*.npz included)" % dest)
             self.set_dataset("rfsoc_fetch_dir", dest, broadcast=True)
         except Exception as e:
             print("[rfsoc] fetch failed:", repr(e))
+            return
+
+        if self.rfsoc_purge_after_fetch:
+            try:
+                n = R.purge_remote(self._rfsoc_sid, dest)
+                print("[rfsoc] board copy purged (%d file(s) verified against %s, then removed)"
+                      % (n, dest))
+            except Exception as e:
+                print("[rfsoc] purge skipped, board copy kept:", repr(e))
 
 
 class FeedbackWithRFSoCBackground(FeedbackWithRFSoC):
