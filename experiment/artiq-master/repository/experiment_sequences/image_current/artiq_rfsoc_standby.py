@@ -210,6 +210,32 @@ def _last_capture(session_id: str, kind: str):
         return None
 
 
+def recent_captures(session_id: str, kind: str, n: int) -> list:
+    """Last ``n`` manifest rows of ``kind`` ("ddr4" | "mr" | "any"), oldest
+    first, filtered on the board the same way as :func:`_last_capture`. Use
+    this (with ``n`` = the delta in ``events_saved`` since your last poll) to
+    walk every capture that landed since then, not just the newest one."""
+    if n <= 0:
+        return []
+    rf = f"{_remote_session_dir(session_id)}/manifest.jsonl"
+    if kind == "ddr4":
+        cmd = f"grep -v mr_snapshot {shlex.quote(rf)} | tail -n {int(n)}"
+    elif kind == "mr":
+        cmd = f"grep mr_snapshot {shlex.quote(rf)} | tail -n {int(n)}"
+    else:
+        cmd = f"tail -n {int(n)} {shlex.quote(rf)}"
+    out = _ssh(cmd + " 2>/dev/null || true", login=False)
+    rows = []
+    for line in out.splitlines():
+        line = line.strip()
+        if line:
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+
 def envelope_decimate(mag, t, n_points: int):
     """Per-bin min / max / mean downsample of a waveform for display: the
     min/max band keeps narrow spikes that plain striding would drop, the mean
@@ -378,6 +404,39 @@ def purge_remote(session_id: str, dest: str) -> int:
 
     _ssh(f"rm -rf {shlex.quote(rdir)}", login=False)
     return len(remote_files)
+
+
+def fetch_event_file(session_id: str, npz_name: str, local_path: str) -> None:
+    """Copy just one capture file down from the board. Used by the live,
+    per-capture incremental purge path in the applet loop; :func:`fetch` and
+    :func:`latest_event` handle the bulk (whole-session / newest-only) cases."""
+    os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
+    rdir = _remote_session_dir(session_id)
+    subprocess.run(["scp", *_SSH_OPTS, f"{RFSOC_HOST}:{rdir}/{npz_name}", local_path],
+                   check=True)
+
+
+def purge_event(session_id: str, npz_name: str, local_path: str) -> bool:
+    """Verify ``local_path`` matches the remote capture file's size, then
+    delete just that one file on the board - manifest.jsonl / crossings.jsonl
+    / status.json etc. are left alone since the round is still running and
+    they keep being appended to (:func:`purge_remote` sweeps those up at
+    round end). Returns ``False`` (no-op, nothing deleted) if the remote file
+    is already gone or the local copy doesn't match; never raises, so a
+    verification miss just means the capture is purged later at round end
+    instead of now."""
+    rdir_file = f"{_remote_session_dir(session_id)}/{npz_name}"
+    out = _ssh(f"stat -c %s {shlex.quote(rdir_file)} 2>/dev/null || true", login=False).strip()
+    if not out:
+        return False
+    try:
+        remote_size = int(out)
+    except ValueError:
+        return False
+    if not os.path.isfile(local_path) or os.path.getsize(local_path) != remote_size:
+        return False
+    _ssh(f"rm -f {shlex.quote(rdir_file)}", login=False)
+    return True
 
 
 def wait(session_id: str, poll_interval: float = 10.0, timeout: float | None = None) -> dict:

@@ -313,6 +313,15 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
             NumberValue(default=2000, scale=1, ndecimals=0, step=500),
             group=G, tooltip="envelope-decimate each captured event to this many "
                              "points before it goes into a dataset")
+        self.setattr_argument(
+            "rfsoc_purge_live", BooleanValue(default=True), group=G,
+            tooltip="fetch + verify + delete each DDR4 capture off the board as soon "
+                    "as the applet poller sees it, instead of waiting for the whole "
+                    "round to end. Keeps the board's disk usage bounded by capture "
+                    "rate x poll period instead of by total round length. Requires "
+                    "rfsoc_applet to be on (this runs in the same poller thread); "
+                    "rfsoc_purge_after_fetch still runs at round end as a final sweep "
+                    "for whatever this missed (and the small bookkeeping files).")
 
     # ------------------------------------------------------------------ #
     def prepare(self):
@@ -601,6 +610,7 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
         sid = self._rfsoc_sid
         dest = self._rfsoc_dest()
         last_ev = -1
+        last_saved = 0
         while not self._rfsoc_applet_stop.wait(self.rfsoc_applet_period_s):
             try:
                 st = R.poll(sid)
@@ -613,6 +623,28 @@ class FeedbackWithRFSoC(FeedbackExperiments, EnvExperiment):
                     self.set_dataset("rfsoc_crossing_t_s",
                                      [c.get("t_rel_s", c["iter"] / pps) for c in cr], broadcast=True)
                     self.set_dataset("rfsoc_crossing_amp", [c["amp"] for c in cr], broadcast=True)
+
+                # fetch + verify + purge every DDR4 capture saved since the last poll
+                # (not just the newest -- more than one can land within a single poll
+                # period) so the board never has to hold a whole round's worth at once.
+                nsaved = int(st.get("events_saved") or 0)
+                if self.rfsoc_purge_live and nsaved > last_saved:
+                    try:
+                        new_rows = R.recent_captures(sid, kind="ddr4", n=nsaved - last_saved)
+                        for row in new_rows:
+                            npz = row.get("npz")
+                            if not npz:
+                                continue
+                            local_path = os.path.join(dest, npz)
+                            if not os.path.exists(local_path):
+                                R.fetch_event_file(sid, npz, local_path)
+                            try:
+                                R.purge_event(sid, npz, local_path)
+                            except Exception as e:
+                                print("[rfsoc] live purge skipped for %s: %r" % (npz, e))
+                    except Exception as e:
+                        print("[rfsoc] incremental fetch/purge error:", repr(e))
+                    last_saved = nsaved
 
                 # refresh the trace only when a NEW full DDR4 window has landed
                 # (nev == status "events" == DDR4 capture count, not MR snapshots)
